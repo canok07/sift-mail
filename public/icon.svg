@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#059669" />
+      <stop offset="50%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#047857" />
+    </linearGradient>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+  </defs>
+  <!-- Background with subtle border -->
+  <rect width="512" height="512" rx="110" fill="url(#bgGrad)" />
+  <rect x="16" y="16" width="480" height="480" rx="94" fill="none" stroke="#1e293b" stroke-width="4" />
+  
+  <!-- Shield Icon -->
+  <path d="M256 90 L390 145 C390 280 256 385 256 385 C256 385 122 280 122 145 Z" fill="url(#shieldGrad)" />
+  
+  <!-- Mail Inside Shield -->
+  <rect x="190" y="180" width="132" height="96" rx="12" fill="#ffffff" />
+  <path d="M190 190 L256 238 L322 190" fill="none" stroke="#047857" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M190 270 L235 230" fill="none" stroke="#047857" stroke-width="6" stroke-linecap="round" />
+  <path d="M322 270 L277 230" fill="none" stroke="#047857" stroke-width="6" stroke-linecap="round" />
+  
+  <!-- AI Sparkle -->
+  <path d="M390 110 L398 126 L414 134 L398 142 L390 158 L382 142 L366 134 L382 126 Z" fill="#34d399" />
+  <path d="M140 320 L145 332 L157 337 L145 342 L140 354 L135 342 L123 337 L135 332 Z" fill="#38bdf8" />
+  
+  <!-- Checkmark -->
+  <circle cx="256" cy="310" r="26" fill="#ffffff" />
+  <path d="M246 310 L253 317 L268 301" fill="none" stroke="#059669" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

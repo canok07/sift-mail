@@ -1,0 +1,112 @@
+{
+  "app": {
+    "title": "Sift",
+    "tagline": "AI-Powered Inbox",
+    "geminiNLP": "Gemini NLP",
+    "multiProvider": "Çoklu Sağlayıcı",
+    "zenMode": "Zen Modu",
+    "zenModeDesc": "Dikkat dağıtmayan kenarlıksız minimalist görünüm",
+    "theme": {
+      "light": "Açık",
+      "dark": "Koyu",
+      "oled": "OLED True Black"
+    },
+    "language": "Dil"
+  },
+  "nav": {
+    "safeOnly": "Yalnızca Güvenli",
+    "allMessages": "Tüm İletiler",
+    "subscriptions": "Abonelik & Bülten",
+    "threats": "Spam & Tehdit",
+    "accounts": "Hesaplar",
+    "vault": "Şifreli Kasa",
+    "desktopApp": "Setup .EXE / Masaüstü",
+    "samplePool": "Örnek Havuz",
+    "liveGmail": "Canlı Gmail",
+    "refresh": "E-postaları Yenile",
+    "loginWithGmail": "Gmail Bağla",
+    "logout": "Çıkış Yap"
+  },
+  "metrics": {
+    "totalEmails": "Toplam İleti",
+    "examined": "İncelenen",
+    "safeEmails": "Yalnızca Güvenli",
+    "verified": "Doğrulanmış",
+    "newsletters": "Bülten & Abonelik",
+    "canUnsubscribe": "Abonelikten Çıkılabilir",
+    "riskyEmails": "Spam & Kimlik Avı",
+    "threats": "Riskli İleti",
+    "scanningProgress": "İletiler Doğal Dil İşleme Modeliyle Taranıyor...",
+    "scanProgressDesc": "{{current}} / {{total}} ileti incelendi — Şüpheli desenler ve abonelikler ayrıştırılıyor."
+  },
+  "actions": {
+    "scanAllNLP": "Tümünü Tek Tek NLP ile Tara",
+    "scanning": "Taranıyor...",
+    "searchPlaceholder": "Gönderici, konu veya içerikte ara...",
+    "selectAll": "Tümünü Seç",
+    "deselect": "Seçimi Temizle",
+    "selectedCount": "{{count}} seçildi",
+    "unsubscribe": "Abonelikten Çık",
+    "unsubscribeAndPurge": "Abonelikten Çık ve Geçmişi Temizle",
+    "trash": "Çöpe At",
+    "batchTrash": "Çöpe Taşı",
+    "inspect": "Detaylı Analiz",
+    "markSafe": "Güvenli Olarak Onayla",
+    "markSafeArchive": "Güvenli Onayla & Arşivle",
+    "checkSingle": "Tek Tek Kontrol Et",
+    "close": "Kapat",
+    "cancel": "Vazgeç",
+    "confirm": "Onayla"
+  },
+  "security": {
+    "privacyShield": "Gizlilik & Takipçi Kalkanı",
+    "trackersBlocked": "{{count}} Gizli Takip Pikseli Engellendi",
+    "noTrackersDetected": "Gizli takip pikseli tespit edilmedi",
+    "trackerExplanation": "E-posta göndericisinin iletinin açılma saatini ve IP konumunu izlemesini önlemek için 1x1 piksel casus görseller filtrelendi.",
+    "blockedList": "Engellenen Takipçi Bağlantıları:",
+    "safetyScore": "Güvenlik Skoru",
+    "unscanned": "Taranmadı",
+    "scoreSafe": "Güvenli",
+    "scoreNewsletter": "Bülten",
+    "scoreRisk": "Risk",
+    "nlpAssessment": "NLP Değerlendirmesi"
+  },
+  "purgeModal": {
+    "title": "Abonelikten Çık ve Gönderici Geçmişini Temizle",
+    "description": "\"{{sender}}\" adresinden bir daha e-posta almamak üzere abonelikten çıkılacak ve bu göndericiye ait toplam {{count}} adet e-posta Çöp Kutusuna taşınacaktır. Bu işlemi onaylıyor musunuz?",
+    "confirmLabel": "Abonelikten Çık & {{count}} İletiyi Sil",
+    "successToast": "\"{{sender}}\" aboneliği sonlandırıldı ve {{count}} adet geçmiş ileti çöpe taşındı."
+  },
+  "detail": {
+    "sender": "Gönderici",
+    "dateAndLabels": "Tarih & Etiketler",
+    "categoryAndRule": "Güvenli İleti Kategorisi & Otomatik Kural",
+    "categoryDesc": "Bu ileti için kategori seçin veya gelecekte gelecek benzer iletiler için otomatik kural oluşturun.",
+    "categoryLabel": "Kategori",
+    "createRuleForDomain": "Gelecek İletiler İçin Kural Oluştur",
+    "ruleCreated": "Kural Eklendi!",
+    "geminiNLPHeading": "Gemini Doğal Dil Analizi Değerlendirmesi",
+    "findingsHeading": "Tespit Edilen Güvenlik & İçerik Bulguları:",
+    "unsubBannerTitle": "Abonelikten Çıkma Bağlantısı Tespit Edildi",
+    "unsubBannerDesc": "Bu e-posta bir bülten veya tanıtım listesine aittir. Tek tıkla aboneliğinizi sonlandırabilirsiniz.",
+    "contentTitle": "İleti İçeriği",
+    "tabSafeRender": "Güvenli Görünüm (Korumalı)",
+    "tabText": "Salt Metin",
+    "tabRaw": "Ham Başlıklar"
+  },
+  "categories": {
+    "work": "İş & Proje",
+    "finance": "Finans & Fatura",
+    "shopping": "Sipariş & Kargo",
+    "official": "Resmi & Kurumsal",
+    "personal": "Kişisel",
+    "travel": "Seyahat & Rezervasyon",
+    "other": "Diğer Güvenli"
+  },
+  "toast": {
+    "markedSafe": "İleti güvenli olarak onaylandı ve arşivlendi.",
+    "unsubStarted": "Abonelikten çıkma işlemi başlatıldı.",
+    "trashed": "İleti çöp kutusuna taşındı.",
+    "rulesApplied": "Kurallar uygulandı."
+  }
+}

@@ -1,0 +1,100 @@
+{
+  "name": "sift",
+  "private": true,
+  "version": "0.5.0",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "tsx server.ts",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "start": "node dist/server.cjs",
+    "clean": "rm -rf dist server.js",
+    "lint": "tsc --noEmit",
+    "cap:sync": "cap sync",
+    "cap:build": "vite build && cap sync",
+    "build:desktop": "vite build && electron-builder",
+    "build:win": "vite build && electron-builder --win",
+    "build:linux": "vite build && electron-builder --linux"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/ios": "^8.5.2",
+    "@capacitor/local-notifications": "^8.3.1",
+    "@capacitor/status-bar": "^8.0.3",
+    "@google/genai": "^2.4.0",
+    "@langchain/core": "^1.2.11",
+    "@tailwindcss/vite": "^4.1.14",
+    "@vitejs/plugin-react": "^5.0.4",
+    "cors": "^2.8.6",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+    "i18next": "^26.4.2",
+    "i18next-browser-languagedetector": "^8.2.1",
+    "imapflow": "^2.0.2",
+    "lucide-react": "^0.546.0",
+    "motion": "^12.23.24",
+    "nodemailer": "^10.0.9",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
+    "react-i18next": "^17.0.14",
+    "react-markdown": "^10.1.0",
+    "telegraf": "^4.16.3",
+    "vite": "^6.2.3",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.2",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.14.0",
+    "@types/nodemailer": "^8.0.1",
+    "autoprefixer": "^10.4.21",
+    "esbuild": "^0.25.0",
+    "tailwindcss": "^4.1.14",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.3",
+    "vite-plugin-pwa": "^1.3.0"
+  },
+  "build": {
+    "appId": "com.sift.desktop",
+    "productName": "Sift",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "public/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Sift-Setup-${version}.${ext}",
+      "icon": "public/pwa-512x512.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Sift"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "artifactName": "Sift-${version}.${ext}",
+      "category": "Office",
+      "icon": "public/pwa-512x512.png"
+    }
+  }
+}

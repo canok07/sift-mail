@@ -1,0 +1,112 @@
+{
+  "app": {
+    "title": "Sift",
+    "tagline": "AI-Powered Inbox",
+    "geminiNLP": "Gemini NLP",
+    "multiProvider": "Multi-Provider",
+    "zenMode": "Zen-Modus",
+    "zenModeDesc": "Ablenkungsfreie, randlose minimalistische Benutzeroberfläche",
+    "theme": {
+      "light": "Hell",
+      "dark": "Dunkel",
+      "oled": "OLED True Black"
+    },
+    "language": "Sprache"
+  },
+  "nav": {
+    "safeOnly": "Nur Sicher",
+    "allMessages": "Alle E-Mails",
+    "subscriptions": "Newsletter & Abos",
+    "threats": "Spam & Bedrohungen",
+    "accounts": "Konten",
+    "vault": "Verschlüsselter Tresor",
+    "desktopApp": "Setup .EXE / Desktop",
+    "samplePool": "Beispielpool",
+    "liveGmail": "Live Gmail",
+    "refresh": "E-Mails aktualisieren",
+    "loginWithGmail": "Mit Gmail verbinden",
+    "logout": "Abmelden"
+  },
+  "metrics": {
+    "totalEmails": "Gesamte E-Mails",
+    "examined": "Geprüft",
+    "safeEmails": "Nur Sicher",
+    "verified": "Verifiziert",
+    "newsletters": "Newsletter & Abos",
+    "canUnsubscribe": "Kündbar",
+    "riskyEmails": "Spam & Phishing",
+    "threats": "Risiko erkannt",
+    "scanningProgress": "E-Mails werden mit KI-Sprachmodell geprüft...",
+    "scanProgressDesc": "{{current}} / {{total}} E-Mails analysiert — Verdächtige Muster und Abonnements werden isoliert."
+  },
+  "actions": {
+    "scanAllNLP": "Alle mit NLP prüfen",
+    "scanning": "Wird geprüft...",
+    "searchPlaceholder": "Nach Absender, Betreff oder Inhalt suchen...",
+    "selectAll": "Alle auswählen",
+    "deselect": "Auswahl aufheben",
+    "selectedCount": "{{count}} ausgewählt",
+    "unsubscribe": "Abmelden",
+    "unsubscribeAndPurge": "Abmelden und Verlauf löschen",
+    "trash": "In den Papierkorb",
+    "batchTrash": "In Papierkorb verschieben",
+    "inspect": "Detaillierte Analyse",
+    "markSafe": "Als sicher einstufen",
+    "markSafeArchive": "Sicher bestätigen & archivieren",
+    "checkSingle": "Einzeln analysieren",
+    "close": "Schließen",
+    "cancel": "Abbrechen",
+    "confirm": "Bestätigen"
+  },
+  "security": {
+    "privacyShield": "Privatsphäre & Spionage-Pixel-Schutz",
+    "trackersBlocked": "{{count}} versteckte Tracking-Pixel blockiert",
+    "noTrackersDetected": "Keine Tracking-Pixel erkannt",
+    "trackerExplanation": "Versteckte 1x1 Pixel-Trackingbilder wurden gefiltert, um Lesebestätigungen und Standortverfolgung durch Absender zu verhindern.",
+    "blockedList": "Blockierte Tracking-URLs:",
+    "safetyScore": "Sicherheitsbewertung",
+    "unscanned": "Ungeprüft",
+    "scoreSafe": "Sicher",
+    "scoreNewsletter": "Newsletter",
+    "scoreRisk": "Risiko",
+    "nlpAssessment": "NLP-Bewertung"
+  },
+  "purgeModal": {
+    "title": "Abmelden und Absenderverlauf löschen",
+    "description": "Sie werden vom Verteiler von \"{{sender}}\" abgemeldet und alle {{count}} bisherigen E-Mails dieses Absenders werden in den Papierkorb verschoben. Möchten Sie fortfahren?",
+    "confirmLabel": "Abmelden & {{count}} E-Mails löschen",
+    "successToast": "Von \"{{sender}}\" abgemeldet und {{count}} E-Mails in den Papierkorb verschoben."
+  },
+  "detail": {
+    "sender": "Absender",
+    "dateAndLabels": "Datum & Labels",
+    "categoryAndRule": "Sichere Kategorie & Automatisierungsregel",
+    "categoryDesc": "Wählen Sie eine Kategorie oder erstellen Sie eine automatische Regel für zukünftige E-Mails.",
+    "categoryLabel": "Kategorie",
+    "createRuleForDomain": "Regel für zukünftige Mails erstellen",
+    "ruleCreated": "Regel erstellt!",
+    "geminiNLPHeading": "Gemini Natural Language Bewertung",
+    "findingsHeading": "Erkannte Sicherheits- und Inhaltsmerkmale:",
+    "unsubBannerTitle": "Abmelde-Link erkannt",
+    "unsubBannerDesc": "Diese Nachricht gehört zu einer Mailingliste. Sie können das Abonnement mit einem Klick beenden.",
+    "contentTitle": "Nachrichteninhalt",
+    "tabSafeRender": "Sichere Ansicht (Geschützt)",
+    "tabText": "Reiner Text",
+    "tabRaw": "Rohdaten & Header"
+  },
+  "categories": {
+    "work": "Arbeit & Projekte",
+    "finance": "Finanzen & Rechnungen",
+    "shopping": "Bestellungen & Versand",
+    "official": "Behörden & Offiziell",
+    "personal": "Persönlich",
+    "travel": "Reisen & Buchungen",
+    "other": "Sonstige Sicher"
+  },
+  "toast": {
+    "markedSafe": "E-Mail als sicher bestätigt und archiviert.",
+    "unsubStarted": "Abmeldevorgang gestartet.",
+    "trashed": "E-Mail in Papierkorb verschoben.",
+    "rulesApplied": "Regeln angewendet."
+  }
+}

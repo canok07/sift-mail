@@ -1,0 +1,7 @@
+{
+  "name": "Sift",
+  "description": "AI-Powered Inbox — Gelen e-postaları yapay zeka ile analiz eden, spam ve bültenlerden arındıran, güvenli iletileri kategorize eden akıllı posta yöneticisi.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+

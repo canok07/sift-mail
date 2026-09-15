@@ -1,0 +1,112 @@
+{
+  "app": {
+    "title": "Sift",
+    "tagline": "AI-Powered Inbox",
+    "geminiNLP": "Gemini NLP",
+    "multiProvider": "Multi-Provider",
+    "zenMode": "Zen Mode",
+    "zenModeDesc": "Distraction-free borderless minimalist interface",
+    "theme": {
+      "light": "Light",
+      "dark": "Dark",
+      "oled": "OLED True Black"
+    },
+    "language": "Language"
+  },
+  "nav": {
+    "safeOnly": "Safe Only",
+    "allMessages": "All Messages",
+    "subscriptions": "Subscriptions",
+    "threats": "Spam & Threats",
+    "accounts": "Accounts",
+    "vault": "Encrypted Vault",
+    "desktopApp": "Setup .EXE / Desktop",
+    "samplePool": "Sample Pool",
+    "liveGmail": "Live Gmail",
+    "refresh": "Refresh Emails",
+    "loginWithGmail": "Connect Gmail",
+    "logout": "Sign Out"
+  },
+  "metrics": {
+    "totalEmails": "Total Emails",
+    "examined": "Analyzed",
+    "safeEmails": "Safe Only",
+    "verified": "Verified",
+    "newsletters": "Newsletters & Subs",
+    "canUnsubscribe": "Unsubscribable",
+    "riskyEmails": "Spam & Phishing",
+    "threats": "Risk Detected",
+    "scanningProgress": "Scanning Emails with Natural Language Processing...",
+    "scanProgressDesc": "{{current}} / {{total}} emails evaluated — Isolating malicious patterns & subscriptions."
+  },
+  "actions": {
+    "scanAllNLP": "Scan All with NLP",
+    "scanning": "Scanning...",
+    "searchPlaceholder": "Search sender, subject or body...",
+    "selectAll": "Select All",
+    "deselect": "Clear Selection",
+    "selectedCount": "{{count}} selected",
+    "unsubscribe": "Unsubscribe",
+    "unsubscribeAndPurge": "Unsubscribe & Purge History",
+    "trash": "Move to Trash",
+    "batchTrash": "Move to Trash",
+    "inspect": "Deep Inspection",
+    "markSafe": "Mark as Safe",
+    "markSafeArchive": "Mark Safe & Archive",
+    "checkSingle": "Analyze Single",
+    "close": "Close",
+    "cancel": "Cancel",
+    "confirm": "Confirm"
+  },
+  "security": {
+    "privacyShield": "Privacy & Spy-Pixel Shield",
+    "trackersBlocked": "{{count}} Hidden Tracking Pixels Blocked",
+    "noTrackersDetected": "No tracking pixels detected",
+    "trackerExplanation": "Filtered 1x1 pixel spy images to prevent the sender from tracking read receipts, open times, and IP locations.",
+    "blockedList": "Blocked Tracker Links:",
+    "safetyScore": "Safety Score",
+    "unscanned": "Unscanned",
+    "scoreSafe": "Safe",
+    "scoreNewsletter": "Newsletter",
+    "scoreRisk": "Risk",
+    "nlpAssessment": "NLP Assessment"
+  },
+  "purgeModal": {
+    "title": "Unsubscribe & Purge Sender History",
+    "description": "You will be unsubscribed from \"{{sender}}\" and all {{count}} emails from this sender will be moved to the Trash. Do you want to proceed?",
+    "confirmLabel": "Unsubscribe & Delete {{count}} Emails",
+    "successToast": "Unsubscribed from \"{{sender}}\" and moved {{count}} historical emails to Trash."
+  },
+  "detail": {
+    "sender": "Sender",
+    "dateAndLabels": "Date & Labels",
+    "categoryAndRule": "Safe Category & Automation Rule",
+    "categoryDesc": "Select a category for this email or create an automated rule for future incoming emails.",
+    "categoryLabel": "Category",
+    "createRuleForDomain": "Create Rule for Incoming",
+    "ruleCreated": "Rule Created!",
+    "geminiNLPHeading": "Gemini Natural Language Assessment",
+    "findingsHeading": "Detected Security & Content Findings:",
+    "unsubBannerTitle": "Unsubscribe Link Detected",
+    "unsubBannerDesc": "This message belongs to a mailing list. You can cancel your subscription with one click.",
+    "contentTitle": "Message Body",
+    "tabSafeRender": "Safe View (Protected)",
+    "tabText": "Plain Text",
+    "tabRaw": "Raw Headers"
+  },
+  "categories": {
+    "work": "Work & Projects",
+    "finance": "Finance & Bills",
+    "shopping": "Orders & Shipping",
+    "official": "Official & Gov",
+    "personal": "Personal",
+    "travel": "Travel & Trips",
+    "other": "Other Safe"
+  },
+  "toast": {
+    "markedSafe": "Email marked as safe and archived.",
+    "unsubStarted": "Unsubscribe process started.",
+    "trashed": "Email moved to trash.",
+    "rulesApplied": "Rules evaluated."
+  }
+}
