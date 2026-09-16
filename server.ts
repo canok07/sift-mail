@@ -13,6 +13,7 @@ import {
 import {
   testImapConnection,
   fetchImapMessages,
+  formatImapError,
   testSmtpConnection,
   sendSmtpMessage,
 } from "./server/imap";
@@ -165,15 +166,21 @@ app.post("/api/imap/fetch", async (req, res) => {
 // ==========================================
 // Central Direct IMAP Mail Synchronization Endpoint (Dynamic In-Memory)
 // ==========================================
-// Purely dynamic: reads credentials from request body in-memory.
-// NEVER reads or saves passwords to .env, disk, or database.
+// 1. Dinamik İstek Verisi: İstemciden gelen req.body.email ve req.body.password kullanılır.
+// 2. Fallback: .env içinde IMAP_USER / IMAP_PASSWORD yoksa dinamik veriler baz alınır.
+// 3. Hata Yönetimi: 500 çökmesi yerine istemciye anlamlı JSON hata mesajı döner.
 const handleEmailSync = async (req: express.Request, res: express.Response) => {
   try {
-    // 1. Resolve dynamic credentials strictly from the incoming POST body
+    // 1. İstemciden gelen dinamik kullanıcı kimlik bilgileri (POST body veya query)
+    // Eğer .env tanımlı değilse doğrudan gelen değerleri kullanır, sabit .env'ye mecbur bırakmaz.
     const user = (
       req.body?.email ||
       req.body?.user ||
       req.body?.auth?.user ||
+      req.query?.email ||
+      req.query?.user ||
+      process.env.IMAP_USER ||
+      process.env.EMAIL_USER ||
       ""
     ).toString().trim();
 
@@ -182,19 +189,28 @@ const handleEmailSync = async (req: express.Request, res: express.Response) => {
       req.body?.appPassword ||
       req.body?.pass ||
       req.body?.auth?.pass ||
+      req.query?.password ||
+      req.query?.pass ||
+      process.env.IMAP_PASSWORD ||
+      process.env.EMAIL_PASS ||
       ""
-    ).toString().trim().replace(/\s+/g, ""); // strip any spacing
+    ).toString().trim().replace(/\s+/g, ""); // Boşlukları ayıkla
 
     if (!user || !pass) {
-      return res.status(400).json({
+      return res.status(200).json({
         success: false,
-        error: "E-posta adresi ve uygulama şifresi zorunludur.",
-        hint: "Lütfen e-posta adresinizi ve 16 haneli Google Uygulama Şifrenizi (App Password) girin. Şifreniz sunucuda saklanmaz.",
+        error: "IMAP kimlik doğrulaması başarısız. Lütfen e-posta adresinizi ve 16 haneli uygulama şifrenizi kontrol edin.",
+        hint: "Google hesabı kullanıyorsanız 2 Adımlı Doğrulama ve 16 haneli Uygulama Şifresi (App Password) oluşturduğunuzdan emin olun.",
       });
     }
 
-    // 2. Resolve IMAP host and connection parameters
-    let host = (req.body?.host || "").toString().trim();
+    // 2. IMAP Sunucu ve Port parametreleri (Dinamik veya otomatik tespit)
+    let host = (
+      req.body?.host ||
+      req.query?.host ||
+      process.env.IMAP_HOST ||
+      ""
+    ).toString().trim();
 
     if (!host) {
       const lowerUser = user.toLowerCase();
@@ -213,16 +229,16 @@ const handleEmailSync = async (req: express.Request, res: express.Response) => {
       }
     }
 
-    const port = Number(req.body?.port) || 993;
-    const secure = req.body?.secure !== false;
+    const port = Number(req.body?.port || req.query?.port || process.env.IMAP_PORT) || 993;
+    const secure = req.body?.secure !== undefined ? req.body.secure !== false : true;
     const maxResults = Math.min(
       100,
-      Math.max(1, Number(req.body?.maxResults) || 35)
+      Math.max(1, Number(req.body?.maxResults || req.query?.maxResults) || 35)
     );
 
-    console.log(`[Dynamic IMAP Sync] ${user} için ${host}:${port} üzerinden ${maxResults} adet ileti çekiliyor...`);
+    console.log(`[Dynamic IMAP Sync] ${user} için ${host}:${port} üzerinden ${maxResults} adet ileti senkronize ediliyor...`);
 
-    // Connect and fetch messages with strictly transient in-memory credentials
+    // 3. IMAP Bağlantısı ve İleti Çekimi
     const result = await fetchImapMessages(
       {
         host,
@@ -234,9 +250,10 @@ const handleEmailSync = async (req: express.Request, res: express.Response) => {
     );
 
     if (!result.success) {
-      return res.status(502).json({
+      console.warn(`[IMAP Sync Failed] ${user}: ${result.error}`);
+      return res.status(200).json({
         success: false,
-        error: result.error || "IMAP sunucusuna bağlanırken hata oluştu.",
+        error: result.error || "IMAP kimlik doğrulaması başarısız. Lütfen 16 haneli uygulama şifrenizi kontrol edin.",
         hint: "Google hesabı kullanıyorsanız 2 Adımlı Doğrulama ve 16 haneli Uygulama Şifresi (App Password) oluşturduğunuzdan emin olun.",
       });
     }
@@ -252,7 +269,7 @@ const handleEmailSync = async (req: express.Request, res: express.Response) => {
       ? "icloud"
       : "imap";
 
-    res.json({
+    return res.status(200).json({
       success: true,
       count: result.messages.length,
       messages: result.messages,
@@ -264,10 +281,11 @@ const handleEmailSync = async (req: express.Request, res: express.Response) => {
       },
     });
   } catch (err: any) {
-    console.error("[IMAP Sync Error]", err);
-    res.status(500).json({
+    console.error("[IMAP Sync Error Catch]", err);
+    // Sunucu 500 çökmesi yerine istemciye anlamlı JSON hata mesajı döner
+    return res.status(200).json({
       success: false,
-      error: err.message || "E-posta senkronizasyonu sırasında beklenmeyen bir hata oluştu.",
+      error: formatImapError(err) || "IMAP kimlik doğrulaması başarısız. Lütfen 16 haneli uygulama şifrenizi kontrol edin.",
     });
   }
 };
