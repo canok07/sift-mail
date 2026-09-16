@@ -1,5 +1,6 @@
 import { EmailAnalysis, EmailMessage } from '../../types';
 import { AIProvider } from '../../stores/useSettingsStore';
+import { safeFetchJson } from '../apiClient';
 import {
   parseListUnsubscribe,
   extractOrderShippingInfo,
@@ -35,7 +36,7 @@ class UnifiedMultiModelAnalyzer implements IEmailAnalyzer {
       .join('\n');
 
     try {
-      const response = await fetch('/api/ai/analyze', {
+      const result = await safeFetchJson<EmailAnalysis>('/api/ai/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -48,13 +49,6 @@ class UnifiedMultiModelAnalyzer implements IEmailAnalyzer {
           ollamaEndpoint: config.ollamaEndpoint || 'http://localhost:11434',
         }),
       });
-
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.error || `${config.provider.toUpperCase()} analizi başarısız oldu (${response.status})`);
-      }
-
-      const result: EmailAnalysis = await response.json();
 
       // Post-process metadata
       if (!result.unsubscribeUrl && email.listUnsubscribe) {

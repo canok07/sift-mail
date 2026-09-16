@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { VaultSummary } from '../types';
 import { AppTheme } from './Header';
+import { safeFetchJson, extractErrorMessage } from '../services/apiClient';
 
 interface VaultModalProps {
   isOpen: boolean;
@@ -44,12 +45,10 @@ export const VaultModal: React.FC<VaultModalProps> = ({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/vault');
-      if (!res.ok) throw new Error('Kasa bilgisi alınamadı');
-      const data = await res.json();
+      const data = await safeFetchJson<VaultSummary>('/api/vault');
       setVault(data);
     } catch (err: any) {
-      setError(err.message || 'Kasa yüklenirken hata oluştu');
+      setError(extractErrorMessage(err, 'Kasa yüklenirken hata oluştu'));
     } finally {
       setLoading(false);
     }
@@ -71,7 +70,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
     setIsSaving(true);
     setError(null);
     try {
-      const res = await fetch('/api/vault/save', {
+      await safeFetchJson('/api/vault/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -82,7 +81,6 @@ export const VaultModal: React.FC<VaultModalProps> = ({
         }),
       });
 
-      if (!res.ok) throw new Error('Kaydedilemedi');
       setSuccessMsg('Veri AES-256-CBC ile yerel diske şifrelenerek kaydedildi.');
       setKey('');
       setLabel('');
@@ -90,7 +88,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
       await fetchVault();
       setTimeout(() => setSuccessMsg(null), 3000);
     } catch (err: any) {
-      setError(err.message || 'Kasa kaydetme başarısız oldu');
+      setError(extractErrorMessage(err, 'Kasa kaydetme başarısız oldu'));
     } finally {
       setIsSaving(false);
     }
@@ -98,12 +96,10 @@ export const VaultModal: React.FC<VaultModalProps> = ({
 
   const handleDelete = async (secretKey: string) => {
     try {
-      const res = await fetch(`/api/vault/${encodeURIComponent(secretKey)}`, {
+      await safeFetchJson(`/api/vault/${encodeURIComponent(secretKey)}`, {
         method: 'DELETE',
       });
-      if (res.ok) {
-        await fetchVault();
-      }
+      await fetchVault();
     } catch (err) {
       console.warn('Silinemedi:', err);
     }

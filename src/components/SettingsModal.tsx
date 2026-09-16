@@ -23,6 +23,7 @@ import {
   AppLanguage,
   AIProvider,
 } from '../stores/useSettingsStore';
+import { safeFetchJson } from '../services/apiClient';
 import { useTranslation } from 'react-i18next';
 
 interface SettingsModalProps {
@@ -94,7 +95,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     });
 
     try {
-      await fetch('/api/telegram/config', {
+      await safeFetchJson('/api/telegram/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: tokenInput, chatId: chatIdInput }),
@@ -111,12 +112,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setSimLoading(true);
     setSimResponse(null);
     try {
-      const res = await fetch('/api/telegram/simulate', {
+      const data = await safeFetchJson<any>('/api/telegram/simulate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ command: simCommand }),
       });
-      const data = await res.json();
       setSimResponse(data.reply || data.message || 'Komut işlendi.');
     } catch {
       setSimResponse('Simülasyon yanıtı alınırken bir hata oluştu.');

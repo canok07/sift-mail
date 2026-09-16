@@ -23,6 +23,7 @@ import {
   detectMailProvider,
   AutoDiscoveredConfig,
 } from '../services/mailProviderManager';
+import { safeFetchJson, extractErrorMessage } from '../services/apiClient';
 
 interface MultiAccountModalProps {
   isOpen: boolean;
@@ -127,7 +128,7 @@ export const MultiAccountModal: React.FC<MultiAccountModalProps> = ({
 
     try {
       // Test IMAP connection via backend route
-      const res = await fetch('/api/imap/test', {
+      const data = await safeFetchJson<any>('/api/imap/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -140,8 +141,6 @@ export const MultiAccountModal: React.FC<MultiAccountModalProps> = ({
           },
         }),
       });
-
-      const data = await res.json();
 
       if (!data.success) {
         setTestResult(data);
@@ -158,7 +157,7 @@ export const MultiAccountModal: React.FC<MultiAccountModalProps> = ({
       // Save encrypted password to local AES-256 Vault if opted
       if (saveToVault) {
         try {
-          await fetch('/api/vault/save', {
+          await safeFetchJson('/api/vault/save', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -201,7 +200,7 @@ export const MultiAccountModal: React.FC<MultiAccountModalProps> = ({
     } catch (err: any) {
       setTestResult({
         success: false,
-        message: err.message || 'Sunucuya bağlanılamadı. Lütfen bilgilerinizi kontrol edin.',
+        message: extractErrorMessage(err, 'Sunucuya bağlanılamadı. Lütfen bilgilerinizi kontrol edin.'),
       });
       setShowCorporateImap(true);
     } finally {

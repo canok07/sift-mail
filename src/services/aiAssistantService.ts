@@ -1,4 +1,5 @@
 import { EmailMessage } from '../types';
+import { safeFetchJson } from './apiClient';
 
 export type AssistantTask =
   | 'general_chat'
@@ -58,20 +59,13 @@ export async function askAIAssistant(
   payload: AssistantRequestPayload
 ): Promise<AssistantResponseData> {
   try {
-    const res = await fetch('/api/ai/assistant/chat', {
+    return await safeFetchJson<AssistantResponseData>('/api/ai/assistant/chat', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
     });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Asistan sunucu hatası (${res.status})`);
-    }
-
-    return await res.json();
   } catch (err: any) {
     console.warn('AI Assistant API call failed, generating contextual fallback:', err);
     // Offline / fallback mock logic so user can still test seamlessly

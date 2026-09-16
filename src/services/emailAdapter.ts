@@ -1,6 +1,7 @@
 import { ConnectedAccount, EmailMessage, MailProvider, AutoRule } from '../types';
 import { evaluateAutoRules } from './categoryManager';
 import { analyzeEmailWithGemini } from './emailAnalyzer';
+import { safeFetchJson } from './apiClient';
 
 /**
  * Universal Email Service Adapter Interface (Adapter Pattern)
@@ -31,7 +32,7 @@ export class ImapServiceAdapter implements EmailServiceAdapter {
     const username = account.imapConfig?.username || account.email;
 
     // Call server IMAP endpoint
-    const response = await fetch('/api/imap/fetch', {
+    const data = await safeFetchJson<any>('/api/imap/fetch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -46,12 +47,6 @@ export class ImapServiceAdapter implements EmailServiceAdapter {
       }),
     });
 
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.error || 'IMAP sunucusundan iletiler alınamadı.');
-    }
-
-    const data = await response.json();
     if (!data.success || !Array.isArray(data.messages)) {
       return [];
     }

@@ -773,6 +773,14 @@ app.post("/api/smtp/send", async (req, res) => {
   }
 });
 
+// Catch-all handler for undefined /api/* routes so they return clean JSON 404 rather than HTML fallback
+app.all("/api/*", (req, res) => {
+  res.status(404).json({
+    success: false,
+    error: `API uç noktası bulunamadı: ${req.method} ${req.originalUrl || req.url}`,
+  });
+});
+
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const isHmrDisabled = process.env.DISABLE_HMR === "true" || process.env.DISABLE_HMR === "1";
@@ -797,4 +805,11 @@ async function startServer() {
   });
 }
 
-startServer();
+// Only launch background HTTP listener if NOT run inside a serverless runtime (e.g. Vercel)
+if (process.env.VERCEL !== "1" && !process.env.VERCEL_ENV && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  startServer();
+}
+
+export default app;
+export { app, startServer };
+

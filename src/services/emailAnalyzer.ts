@@ -1,4 +1,5 @@
 import { EmailAnalysis, EmailMessage, OrderShippingInfo, FinanceBillingInfo } from '../types';
+import { safeFetchJson } from './apiClient';
 
 const OFFLINE_ANALYSIS_CACHE_KEY = 'smart_mail_analysis_cache_v2';
 
@@ -113,7 +114,7 @@ export async function analyzeEmailWithGemini(email: EmailMessage): Promise<Email
   ].filter(Boolean).join('\n');
 
   try {
-    const response = await fetch('/api/analyze-email', {
+    const result = await safeFetchJson<EmailAnalysis>('/api/analyze-email', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -126,13 +127,6 @@ export async function analyzeEmailWithGemini(email: EmailMessage): Promise<Email
         headers: headersCombined,
       }),
     });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `NLP analizi başarısız oldu (${response.status})`);
-    }
-
-    const result: EmailAnalysis = await response.json();
 
     // If header has direct unsubscribe URL and AI didn't catch it, supplement it
     if (!result.unsubscribeUrl && email.listUnsubscribe) {
@@ -199,7 +193,7 @@ export async function analyzeBatchEmails(
   emails: EmailMessage[]
 ): Promise<Record<string, EmailAnalysis>> {
   try {
-    const response = await fetch('/api/analyze-batch', {
+    const data = await safeFetchJson<any>('/api/analyze-batch', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -215,11 +209,6 @@ export async function analyzeBatchEmails(
       }),
     });
 
-    if (!response.ok) {
-      throw new Error('Toplu analiz başarısız oldu');
-    }
-
-    const data = await response.json();
     const map: Record<string, EmailAnalysis> = {};
     if (Array.isArray(data.results)) {
       for (const item of data.results) {

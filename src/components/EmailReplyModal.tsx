@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { EmailMessage, ConnectedAccount } from '../types';
 import { AppTheme } from './Header';
+import { safeFetchJson, extractErrorMessage } from '../services/apiClient';
 
 interface EmailReplyModalProps {
   isOpen: boolean;
@@ -82,7 +83,7 @@ export const EmailReplyModal: React.FC<EmailReplyModalProps> = ({
       const userAuth = imapCfg.username || imapCfg.auth?.user || sessionCredentials?.email || activeAccount?.email || '';
       const passAuth = imapCfg.password || imapCfg.auth?.pass || sessionCredentials?.password || 'VAULT_CREDENTIAL';
 
-      const smtpRes = await fetch('/api/smtp/send', {
+      await safeFetchJson('/api/smtp/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -103,11 +104,6 @@ export const EmailReplyModal: React.FC<EmailReplyModalProps> = ({
         }),
       });
 
-      if (!smtpRes.ok) {
-        const errorData = await smtpRes.json().catch(() => null);
-        throw new Error(errorData?.error || errorData?.message || 'SMTP sunucusuna bağlanılamadı veya şifre hatalı.');
-      }
-
       setStatusMessage({ type: 'success', text: 'E-posta yanıtı başarıyla gönderildi!' });
       if (onSuccess) onSuccess(email.id);
       if (onSuccessSent) onSuccessSent(email.id);
@@ -119,7 +115,7 @@ export const EmailReplyModal: React.FC<EmailReplyModalProps> = ({
       console.error('Email send error:', err);
       setStatusMessage({
         type: 'error',
-        text: err.message || 'E-posta gönderilirken bir sorun oluştu.',
+        text: extractErrorMessage(err, 'E-posta gönderilirken bir sorun oluştu.'),
       });
     } finally {
       setIsSending(false);

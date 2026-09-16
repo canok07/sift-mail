@@ -1,5 +1,6 @@
 import { EmailMessage, MailProvider } from '../types';
 import { getApiUrl } from './apiConfig';
+import { safeFetchJson } from './apiClient';
 
 export interface DynamicSyncCredentials {
   email: string;
@@ -59,22 +60,13 @@ export async function syncEmailsFromBackend(
   };
 
   try {
-    const response = await fetch(url, {
+    const data = await safeFetchJson<BackendSyncResponse>(url, {
       method: 'POST',
       headers: {
-        Accept: 'application/json',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
     });
-
-    if (!response.ok) {
-      const errJson = await response.json().catch(() => ({}));
-      const msg = errJson.error || errJson.hint || `Sunucu hatası: HTTP ${response.status}`;
-      throw new Error(msg);
-    }
-
-    const data: BackendSyncResponse = await response.json();
 
     if (!data.success) {
       const errorMsg = data.error || data.hint || 'IMAP senkronizasyonu başarısız oldu.';

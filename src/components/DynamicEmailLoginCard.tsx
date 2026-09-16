@@ -29,7 +29,7 @@ interface DynamicEmailLoginCardProps {
   isLoading: boolean;
   theme?: AppTheme;
   initialEmail?: string;
-  errorMessage?: string | null;
+  errorMessage?: any;
   onClearError?: () => void;
   isModal?: boolean;
   onClose?: () => void;
@@ -63,6 +63,18 @@ export const DynamicEmailLoginCard: React.FC<DynamicEmailLoginCardProps> = ({
     return detectMailProvider(email);
   }, [email]);
 
+  // Safe error string parsing (prevents [object Object] and safely extracts message)
+  const safeErrorMessage = useMemo(() => {
+    if (validationError) return validationError;
+    if (!errorMessage) return null;
+    if (typeof errorMessage === 'string') return errorMessage;
+    if (typeof errorMessage === 'object' && errorMessage !== null) {
+      const err = errorMessage as any;
+      return err?.response?.data?.message || err?.message || 'Bağlantı sağlanamadı';
+    }
+    return 'Bağlantı sağlanamadı';
+  }, [validationError, errorMessage]);
+
   const isOled = theme === 'oled';
   const isDark = theme === 'dark' || isOled;
 
@@ -92,7 +104,11 @@ export const DynamicEmailLoginCard: React.FC<DynamicEmailLoginCardProps> = ({
     }
 
     if (!cleanPassword || cleanPassword.length < 4) {
-      setValidationError('Lütfen 16 haneli Google Uygulama Şifrenizi veya posta şifrenizi girin.');
+      setValidationError(
+        discovered.authType === 'app_password'
+          ? `Lütfen 16 haneli ${discovered.providerName} Uygulama Şifrenizi girin.`
+          : 'Lütfen e-posta şifrenizi girin.'
+      );
       return;
     }
 
@@ -127,7 +143,7 @@ export const DynamicEmailLoginCard: React.FC<DynamicEmailLoginCardProps> = ({
               E-posta Hesabı ile Oturum Aç
             </h2>
             <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">
-              Lütfen E-posta ve Uygulama Şifreniz ile giriş yapın
+              Lütfen E-posta ve Şifreniz ile giriş yapın
             </p>
           </div>
         </div>
@@ -144,11 +160,11 @@ export const DynamicEmailLoginCard: React.FC<DynamicEmailLoginCardProps> = ({
       </div>
 
       {/* Error Displays */}
-      {(validationError || errorMessage) && (
+      {safeErrorMessage && (
         <div className="mb-5 p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 text-xs flex items-start gap-2.5">
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
           <div className="flex-1">
-            <p className="font-semibold">{validationError || errorMessage}</p>
+            <p className="font-semibold">{safeErrorMessage}</p>
           </div>
         </div>
       )}
@@ -196,7 +212,11 @@ export const DynamicEmailLoginCard: React.FC<DynamicEmailLoginCardProps> = ({
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
-              <span>Google Uygulama Şifresi (16 Haneli)</span>
+              <span>
+                {discovered.authType === 'app_password'
+                  ? `${discovered.providerName} Uygulama Şifresi (16 Haneli)`
+                  : 'E-posta Şifresi'}
+              </span>
             </label>
             <button
               type="button"
@@ -216,7 +236,11 @@ export const DynamicEmailLoginCard: React.FC<DynamicEmailLoginCardProps> = ({
                 setPassword(e.target.value);
                 if (validationError) setValidationError(null);
               }}
-              placeholder="xxxx xxxx xxxx xxxx"
+              placeholder={
+                discovered.authType === 'app_password'
+                  ? 'xxxx xxxx xxxx xxxx'
+                  : '••••••••'
+              }
               disabled={isLoading}
               required
               autoCapitalize="none"
@@ -234,35 +258,16 @@ export const DynamicEmailLoginCard: React.FC<DynamicEmailLoginCardProps> = ({
           </div>
         </div>
 
-        {/* How to get App Password Expandable Guide */}
+        {/* How to get App Password / Provider Hint Expandable Guide */}
         {showHelp && (
           <div className="p-3.5 rounded-2xl bg-emerald-500/5 border border-emerald-500/15 text-xs text-zinc-600 dark:text-zinc-300 space-y-1.5 animate-fadeIn">
             <div className="font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
               <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>16 Haneli Google Uygulama Şifresi Nasıl Alınır?</span>
+              <span>{discovered.providerName} Bağlantı Rehberi</span>
             </div>
-            <ol className="list-decimal list-inside space-y-1 text-[11px] leading-relaxed pl-1 text-zinc-600 dark:text-zinc-400">
-              <li>
-                <a
-                  href="https://myaccount.google.com/security"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-emerald-500 font-semibold underline"
-                >
-                  myaccount.google.com/security
-                </a>{' '}
-                adresine gidin.
-              </li>
-              <li>"2 Adımlı Doğrulama"nın açık olduğundan emin olun.</li>
-              <li>Arama çubuğuna "Uygulama Şifreleri" yazın veya ilgili menüyü açın.</li>
-              <li>
-                Uygulama adı olarak <b>Sift</b> yazıp 16 haneli (örn:{' '}
-                <code className="bg-black/5 dark:bg-white/10 px-1 py-0.5 rounded">
-                  abcd efgh ijkl mnop
-                </code>
-                ) şifreyi buraya yapıştırın.
-              </li>
-            </ol>
+            <p className="text-[11px] leading-relaxed pl-1 text-zinc-600 dark:text-zinc-400">
+              {discovered.hint || 'E-posta adresinize ait şifre veya uygulama parolası ile bağlanabilirsiniz.'}
+            </p>
           </div>
         )}
 
