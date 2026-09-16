@@ -57,6 +57,7 @@ export const DynamicEmailLoginCard: React.FC<DynamicEmailLoginCardProps> = ({
   const [customSecure, setCustomSecure] = useState(true);
 
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
 
   // Auto-detect provider metadata based on domain
   const discovered: AutoDiscoveredConfig = useMemo(() => {
@@ -66,14 +67,14 @@ export const DynamicEmailLoginCard: React.FC<DynamicEmailLoginCardProps> = ({
   // Safe error string parsing (prevents [object Object] and safely extracts message)
   const safeErrorMessage = useMemo(() => {
     if (validationError) return validationError;
-    if (!errorMessage) return null;
-    if (typeof errorMessage === 'string') return errorMessage;
-    if (typeof errorMessage === 'object' && errorMessage !== null) {
-      const err = errorMessage as any;
-      return err?.response?.data?.message || err?.message || 'Bağlantı sağlanamadı';
-    }
-    return 'Bağlantı sağlanamadı';
-  }, [validationError, errorMessage]);
+    const rawError = localError || errorMessage;
+    if (!rawError) return null;
+    const errorMessageStr =
+      typeof rawError === 'string'
+        ? rawError
+        : (rawError as any)?.message || (rawError as any)?.error || JSON.stringify(rawError);
+    return errorMessageStr;
+  }, [validationError, localError, errorMessage]);
 
   const isOled = theme === 'oled';
   const isDark = theme === 'dark' || isOled;
@@ -93,6 +94,7 @@ export const DynamicEmailLoginCard: React.FC<DynamicEmailLoginCardProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setValidationError(null);
+    setLocalError(null);
     if (onClearError) onClearError();
 
     const cleanEmail = email.trim();
@@ -123,8 +125,13 @@ export const DynamicEmailLoginCard: React.FC<DynamicEmailLoginCardProps> = ({
         port: effectivePort,
         secure: customSecure,
       });
-    } catch (err: any) {
-      // Error handled by parent toast or errorMessage prop
+    } catch (error: any) {
+      console.error("Auth error details:", error);
+      const errorMessage =
+        typeof error === 'string'
+          ? error
+          : (error as any)?.message || (error as any)?.error || JSON.stringify(error);
+      setLocalError(errorMessage);
     }
   };
 

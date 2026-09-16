@@ -143,7 +143,17 @@ export const MultiAccountModal: React.FC<MultiAccountModalProps> = ({
       });
 
       if (!data.success) {
-        setTestResult(data);
+        console.error("Auth error details:", data);
+        const errorMessage =
+          typeof data.message === 'string'
+            ? data.message
+            : typeof data.error === 'string'
+            ? data.error
+            : (data as any)?.message || (data as any)?.error || JSON.stringify(data);
+        setTestResult({
+          success: false,
+          message: errorMessage,
+        });
         setShowCorporateImap(true);
         setIsSubmitting(false);
         return;
@@ -197,10 +207,15 @@ export const MultiAccountModal: React.FC<MultiAccountModalProps> = ({
         setTestResult(null);
         onClose();
       }, 500);
-    } catch (err: any) {
+    } catch (error: any) {
+      console.error("Auth error details:", error);
+      const errorMessage =
+        typeof error === 'string'
+          ? error
+          : (error as any)?.message || (error as any)?.error || JSON.stringify(error);
       setTestResult({
         success: false,
-        message: extractErrorMessage(err, 'Sunucuya bağlanılamadı. Lütfen bilgilerinizi kontrol edin.'),
+        message: errorMessage || 'Sunucuya bağlanılamadı. Lütfen bilgilerinizi kontrol edin.',
       });
       setShowCorporateImap(true);
     } finally {

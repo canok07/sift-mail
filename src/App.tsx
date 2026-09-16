@@ -332,13 +332,15 @@ export default function App() {
           `${categorized.length} adet e-posta başarıyla senkronize edildi!`,
           'success'
         );
-      } catch (err: any) {
-        console.error('IMAP senkronizasyon hatası:', err);
-        const errorMsg =
-          err.message || 'IMAP e-posta senkronizasyonu başarısız oldu. Lütfen şifrenizi kontrol edin.';
-        setSyncError(errorMsg);
-        showToast(errorMsg, 'error');
-        throw err;
+      } catch (error: any) {
+        console.error("Auth error details:", error);
+        const errorMessage =
+          typeof error === 'string'
+            ? error
+            : (error as any)?.message || (error as any)?.error || JSON.stringify(error);
+        setSyncError(errorMessage);
+        showToast(errorMessage, 'error');
+        throw error;
       } finally {
         setIsSyncingEmails(false);
       }
