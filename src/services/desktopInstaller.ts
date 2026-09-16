@@ -76,7 +76,7 @@ cat <<EOF > "$APP_DIR/Contents/Info.plist"
     <key>CFBundleIdentifier</key>
     <string>com.sift.desktop</string>
     <key>CFBundleVersion</key>
-    <string>0.5.0</string>
+    <string>0.5.1</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleExecutable</key>
@@ -180,7 +180,7 @@ export function downloadLinuxSetupScript(appUrl: string) {
 export function downloadDesktopPackageJson(appUrl: string) {
   const packageConfig = {
     name: 'sift',
-    version: '0.5.0',
+    version: '0.5.1',
     description: 'Sift - AI-Powered Minimalist Inbox',
     main: 'main.cjs',
     scripts: {

@@ -429,9 +429,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* 3. Alt Durum Çubuğu */}
       <div className="p-3 border-t border-black/5 dark:border-white/5 bg-black/[0.01] dark:bg-white/[0.01]">
-        <div className="flex items-center gap-2 text-[11px] text-zinc-400 dark:text-zinc-500">
-          <Lock className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-          <span className="truncate">AES-256 & Gemini Koruması</span>
+        <div className="flex items-center justify-between text-[11px] text-zinc-400 dark:text-zinc-500">
+          <div className="flex items-center gap-2 min-w-0">
+            <Lock className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+            <span className="truncate">AES-256 & Gemini</span>
+          </div>
+          <span
+            id="sidebar-version-badge"
+            className="font-mono text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-black/5 dark:bg-white/5 text-zinc-500 dark:text-zinc-400 border border-black/5 dark:border-white/5 shrink-0"
+            title="Sürüm 0.5.1"
+          >
+            v0.5.1
+          </span>
         </div>
       </div>
     </aside>

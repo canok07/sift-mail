@@ -617,7 +617,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="pt-4 border-t border-black/5 dark:border-white/5 flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
                 <div>
                   <p className="font-bold text-zinc-900 dark:text-zinc-200">Sift</p>
-                  <p className="text-[11px]">Sürüm 2.0.0 — Zen Edition</p>
+                  <p className="text-[11px]">Sürüm 0.5.1</p>
                 </div>
                 <span className="px-2.5 py-1 rounded-full bg-black/5 dark:bg-white/5 text-[10px] font-semibold">
                   Human-in-the-Loop Korumalı

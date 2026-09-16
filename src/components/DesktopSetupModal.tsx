@@ -75,7 +75,7 @@ export const DesktopSetupModal: React.FC<DesktopSetupModalProps> = ({
                 <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                   Cross-Platform (Windows • Mac • Linux • Web)
                 </span>
-                <span className="text-xs text-zinc-400">v0.5.0</span>
+                <span className="text-xs text-zinc-400">v0.5.1</span>
               </div>
               <h2 className="text-base font-bold text-white mt-1">
                 Sift — Masaüstü Kurulumu & Çapraz Platform Erişimi
