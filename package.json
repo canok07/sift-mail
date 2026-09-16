@@ -10,11 +10,12 @@
     "start": "node dist/server.cjs",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
+    "test": "tsx --test tests/security.test.ts",
     "cap:sync": "cap sync",
     "cap:build": "vite build && cap sync",
-    "build:desktop": "vite build && electron-builder",
-    "build:win": "vite build && electron-builder --win",
-    "build:linux": "vite build && electron-builder --linux"
+    "build:desktop": "npm run build && electron-builder",
+    "build:win": "npm run build && electron-builder --win",
+    "build:linux": "npm run build && electron-builder --linux"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.2",
@@ -41,6 +42,7 @@
     "react-markdown": "^10.1.0",
     "telegraf": "^4.16.3",
     "vite": "^6.2.3",
+    "zod": "^4.6.5",
     "zustand": "^5.0.15"
   },
   "devDependencies": {

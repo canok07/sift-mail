@@ -94,16 +94,48 @@ The application will be accessible at `http://localhost:3000`.
 
 ---
 
-### 5. Production Build & Deployment
+### 5. Security Architecture & Hardening
 
-To compile the Vite client application and package the Node.js backend into a standalone `dist/server.cjs` bundle:
+Sift implements defense-in-depth security engineered specifically for local-first and desktop deployments:
+
+- **Local Vault (AES-256-GCM)**: Stored credentials in `data/vault.enc` are encrypted with authenticated AES-256-GCM using unique initialization vectors (IV) and 128-bit authentication tags. Keys are derived machine-specifically using `crypto.scryptSync`. Corrupted or tampered files fail closed immediately.
+- **Strict TLS Certificate Enforcement**: All IMAP connections enforce `rejectUnauthorized: true`. Insecure TLS is disallowed by default and can only be enabled in isolated dev environments via `ALLOW_INSECURE_TLS='true'`.
+- **CORS Isolation**: All wildcard / permissive fallback routes are removed. By default, only localhost, 127.0.0.1, and native desktop/mobile protocols (`capacitor://`, `ionic://`, `file://`) can interact with the API. Private LAN access is disabled unless explicitly enabled via `ENABLE_LAN_ACCESS=true`.
+- **Input Validation (Zod)**: All sensitive POST/PUT/DELETE API endpoints enforce strict Zod schemas against injection or malformed payloads.
+- **Rate Limiting & Token Protection**: API routes are guarded by sliding-window rate limiters (45 req/min for sensitive operations) and dynamic session token authorization via `/api/auth/session`.
+
+---
+
+### 6. Automated Testing & Verification
+
+Sift includes an automated security test suite covering Vault AES-256-GCM, TLS policies, Zod schema validation, session token issuance, rate limiting, and CORS origin whitelisting:
 
 ```bash
-# Build optimized frontend & bundle backend into dist/server.cjs
-npm run build
+# Run security test suite
+npm run test
 
-# Start production server
-npm run start
+# Run TypeScript type check
+npm run lint
+
+# Run full production build
+npm run build
+```
+
+---
+
+### 7. Desktop Application (Electron & Windows/Linux/macOS)
+
+Sift can be run as a standalone desktop application with native window controls, system tray minimization, and background mailbox monitoring:
+
+```bash
+# Compile and build desktop installer packages
+npm run build:desktop
+
+# For Windows installer (.exe / NSIS)
+npm run build:win
+
+# For Linux packages (.AppImage / .deb)
+npm run build:linux
 ```
 
 ---
@@ -190,16 +222,48 @@ Uygulama tarayıcınızda `http://localhost:3000` adresinde çalışacaktır.
 
 ---
 
-### 5. Derleme (Build) ve Prodüksiyon Başlatma
+### 5. Güvenlik Mimarisi ve Sıkılaştırma (Hardening)
 
-Ön yüzü Vite ile derleyip arka yüz sunucusunu tek bir CommonJS dosyasında (`dist/server.cjs`) toplamak için:
+Sift, yerel ve masaüstü öncelikli dağıtımlar için çok katmanlı savunma (defense-in-depth) mimarisiyle donatılmıştır:
+
+- **Yerel Kasa (AES-256-GCM)**: `data/vault.enc` içindeki kullanıcı kimlik bilgileri, benzersiz IV ve 128-bit kimlik doğrulama etiketi (Auth Tag) ile AES-256-GCM standardında şifrelenir. Şifreleme anahtarı `crypto.scryptSync` ve makineye özgü donanım imzasıyla türetilir. Dosya manipüle edilirse sistem otomatik olarak kapanır.
+- **Sıkı TLS Sertifika Doğrulaması**: Tüm IMAP bağlantılarında `rejectUnauthorized: true` kuralı zorunludur. Geçersiz/sahte sertifikalar varsayılan olarak reddedilir; güvensiz TLS yalnızca izole yerel test ortamında `ALLOW_INSECURE_TLS='true'` ile açılabilir.
+- **CORS İzolasyonu**: Genel wildcard (`*`) fallback kuralları tamamen kaldırılmıştır. Yalnızca localhost, 127.0.0.1 ve yerel masaüstü/mobil uygulama protokolleri (`capacitor://`, `ionic://`, `file://`) kabul edilir. Yerel ağ (LAN) erişimi `ENABLE_LAN_ACCESS=true` tanımlanmadığı sürece kapalıdır.
+- **Zod Giriş Doğrulaması**: Tüm kritik API uçlarında (Kasa, IMAP, SMTP, Yapay Zeka, Telegram) gelen istek gövdeleri Zod şemalarıyla sıkı kontrolden geçirilir.
+- **İstek Sınırlandırma ve Token Koruması**: Hassas uçlar kayan pencereli hız sınırlayıcılar (dakikada 45 istek) ve `/api/auth/session` üzerinden dinamik el sıkışma tokeni ile korunur.
+
+---
+
+### 6. Otomatik Güvenlik Testleri ve Doğrulama
+
+Kasa şifrelemesi, TLS politikaları, Zod şemaları, oturum tokenleri ve CORS kuralları otomatik test paketiyle denetlenmektedir:
 
 ```bash
-# Prodüksiyon derlemesini oluştur (Vite + esbuild dist/server.cjs)
-npm run build
+# Güvenlik test paketini çalıştırın (19/19 test)
+npm run test
 
-# Prodüksiyon sunucusunu başlat
-npm run start
+# TypeScript tip kontrolünü çalıştırın
+npm run lint
+
+# Tam prodüksiyon derlemesini test edin
+npm run build
+```
+
+---
+
+### 7. Masaüstü Uygulaması (Electron ile .exe, .AppImage, .deb)
+
+Sift; yerel sistem tepsisi (system tray), arka planda posta tarama ve bağımsız pencere desteği ile masaüstü uygulaması olarak paketlenebilir:
+
+```bash
+# Masaüstü derlemesini başlat
+npm run build:desktop
+
+# Windows kurulum paketi için (.exe / NSIS)
+npm run build:win
+
+# Linux kurulum paketi için (.AppImage / .deb)
+npm run build:linux
 ```
 
 ---

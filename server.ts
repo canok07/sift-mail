@@ -23,6 +23,28 @@ import {
   getTelegramStatus,
   processTelegramNaturalLanguageCommand,
 } from "./server/telegramBot";
+import {
+  generalApiLimiter,
+  sensitiveApiLimiter,
+  requireApiToken,
+  getActiveSessionToken,
+  isOriginAllowed,
+} from "./server/security";
+import {
+  validateBody,
+  VaultSaveSchema,
+  ImapConnectSchema,
+  ImapFetchSchema,
+  EmailSyncSchema,
+  SmtpConnectSchema,
+  SmtpSendSchema,
+  AnalyzeEmailSchema,
+  AnalyzeBatchSchema,
+  AiAnalyzeSchema,
+  AssistantChatSchema,
+  TelegramConfigSchema,
+  TelegramSimulateSchema,
+} from "./server/validation";
 
 dotenv.config();
 
@@ -30,44 +52,64 @@ const app = express();
 const PORT = 3000;
 
 // ==========================================
-// Flexible & Secure CORS Configuration
+// Strict & Explicit CORS Configuration
 // ==========================================
-// Supports:
-// 1. Localhost and 127.0.0.1 on any port (3000, 5173, etc.)
-// 2. Private LAN IPs (192.168.x.x, 10.x.x.x, 172.16-31.x.x) for testing from local mobile phones/devices
-// 3. Custom origins defined in CORS_ORIGIN environment variable (comma separated or *)
-// 4. Non-browser clients (Electron desktop app, Capacitor mobile app, cURL, server-to-server) where origin is undefined
-const allowedCustomOrigins = process.env.CORS_ORIGIN
-  ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim().replace(/\/+$/, ''))
-  : [];
+// Security mandate:
+// 1. Explicitly allow localhost / 127.0.0.1 on any port
+// 2. Allow non-browser requests (Electron, Capacitor, mobile native, server-to-server) where origin is undefined
+// 3. Private LAN IPs (192.168.x.x, 10.x.x.x, 172.16-31.x.x) are ONLY allowed if ENABLE_LAN_ACCESS='true'
+// 4. Custom origins explicitly configured via CORS_ORIGIN or ALLOWED_ORIGINS
+// 5. Cloud Run / AI Studio preview domain (*.run.app)
+// 6. STRICT: Reject any unauthorized origin (permissive fallback removed)
+const allowedCustomOrigins = (process.env.CORS_ORIGIN || process.env.ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((o) => o.trim().replace(/\/+$/, ""))
+  .filter(Boolean);
+
+const isLanAccessEnabled = process.env.ENABLE_LAN_ACCESS === "true";
 
 const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
-    // Allow non-browser requests (Electron, Capacitor, mobile native, server-to-server)
-    if (!origin) {
+    if (
+      isOriginAllowed(origin, {
+        isLanAccessEnabled,
+        allowedCustomOrigins,
+        appUrl: process.env.APP_URL,
+      })
+    ) {
       return callback(null, true);
     }
 
-    const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
-    const isPrivateLan = /^https?:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?$/.test(origin);
-    const isAllowedCustom = allowedCustomOrigins.includes(origin) || allowedCustomOrigins.includes('*');
-    const isCloudPlatform = origin.includes('.run.app') || origin.includes('localhost');
-
-    if (isLocalhost || isPrivateLan || isAllowedCustom || isCloudPlatform) {
-      return callback(null, true);
-    }
-
-    // Default permissive fallback for developer convenience on self-hosted networks
-    return callback(null, true);
+    // STRICT: Reject all unauthorized origins (no permissive fallback)
+    console.warn(`[Sift CORS Security] Yetkisiz origin engellendi: ${origin}`);
+    return callback(new Error("CORS isteği engellendi: Yetkisiz origin adresi."));
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "X-Requested-With",
+    "Accept",
+    "Origin",
+    "x-sift-key",
+  ],
 };
 
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 app.use(express.json({ limit: "15mb" }));
+
+// Apply general rate limiting across all API endpoints
+app.use("/api", generalApiLimiter);
+
+// Handshake endpoint for local frontend / Electron clients to receive session authorization token
+app.get("/api/auth/session", (req, res) => {
+  res.json({
+    token: getActiveSessionToken(),
+    timestamp: new Date().toISOString(),
+  });
+});
 
 // Lazy initialization for Gemini AI client (supports custom API key from local vault)
 let aiClient: GoogleGenAI | null = null;
@@ -95,10 +137,10 @@ app.get("/api/health", (req, res) => {
 });
 
 // ==========================================
-// Encrypted Local Vault (AES-256-CBC) Routes
+// Encrypted Local Vault (AES-256-GCM Authenticated) Routes
 // ==========================================
 
-app.get("/api/vault", (req, res) => {
+app.get("/api/vault", sensitiveApiLimiter, requireApiToken, (req, res) => {
   try {
     const summary = getVaultSummary();
     res.json(summary);
@@ -107,20 +149,17 @@ app.get("/api/vault", (req, res) => {
   }
 });
 
-app.post("/api/vault/save", (req, res) => {
+app.post("/api/vault/save", sensitiveApiLimiter, requireApiToken, validateBody(VaultSaveSchema), (req, res) => {
   try {
     const { key, value, category, label } = req.body;
-    if (!key || !value) {
-      return res.status(400).json({ error: "Anahtar ve değer gereklidir" });
-    }
     saveVaultSecret(key, value, category, label);
-    res.json({ success: true, message: "Veri AES-256-CBC ile yerel diske güvenle kaydedildi" });
+    res.json({ success: true, message: "Veri AES-256-GCM ile yerel diske güvenle kaydedildi" });
   } catch (err: any) {
     res.status(500).json({ error: "Kasa kaydetme hatası", details: err.message });
   }
 });
 
-app.delete("/api/vault/:key", (req, res) => {
+app.delete("/api/vault/:key", sensitiveApiLimiter, requireApiToken, (req, res) => {
   try {
     const { key } = req.params;
     const removed = deleteVaultSecret(key);
@@ -134,12 +173,9 @@ app.delete("/api/vault/:key", (req, res) => {
 // Universal IMAP & SMTP Service Routes
 // ==========================================
 
-app.post("/api/imap/test", async (req, res) => {
+app.post("/api/imap/test", sensitiveApiLimiter, requireApiToken, validateBody(ImapConnectSchema), async (req, res) => {
   try {
     const { host, port, secure, auth } = req.body;
-    if (!host || !auth?.user || !auth?.pass) {
-      return res.status(400).json({ error: "Sunucu, kullanıcı adı ve şifre zorunludur" });
-    }
     const result = await testImapConnection({ host, port: Number(port) || 993, secure: secure ?? true, auth });
     res.json(result);
   } catch (err: any) {
@@ -147,12 +183,9 @@ app.post("/api/imap/test", async (req, res) => {
   }
 });
 
-app.post("/api/imap/fetch", async (req, res) => {
+app.post("/api/imap/fetch", sensitiveApiLimiter, requireApiToken, validateBody(ImapFetchSchema), async (req, res) => {
   try {
     const { host, port, secure, auth, maxResults } = req.body;
-    if (!host || !auth?.user || !auth?.pass) {
-      return res.status(400).json({ error: "Sunucu ve kimlik bilgileri gereklidir" });
-    }
     const result = await fetchImapMessages(
       { host, port: Number(port) || 993, secure: secure ?? true, auth },
       maxResults || 15
@@ -290,15 +323,12 @@ const handleEmailSync = async (req: express.Request, res: express.Response) => {
   }
 };
 
-app.get("/api/emails/sync", handleEmailSync);
-app.post("/api/emails/sync", handleEmailSync);
+app.get("/api/emails/sync", sensitiveApiLimiter, requireApiToken, handleEmailSync);
+app.post("/api/emails/sync", sensitiveApiLimiter, requireApiToken, validateBody(EmailSyncSchema), handleEmailSync);
 
-app.post("/api/smtp/test", async (req, res) => {
+app.post("/api/smtp/test", sensitiveApiLimiter, requireApiToken, validateBody(SmtpConnectSchema), async (req, res) => {
   try {
     const { host, port, secure, auth } = req.body;
-    if (!host || !auth?.user || !auth?.pass) {
-      return res.status(400).json({ error: "SMTP sunucusu ve kimlik bilgileri gereklidir" });
-    }
     const result = await testSmtpConnection({ host, port: Number(port) || 465, secure: secure ?? true, auth });
     res.json(result);
   } catch (err: any) {
@@ -310,7 +340,7 @@ app.post("/api/smtp/test", async (req, res) => {
 // Deep Gemini NLP Analysis Route with Rich Metadata
 // ==========================================
 
-app.post("/api/analyze-email", async (req, res) => {
+app.post("/api/analyze-email", sensitiveApiLimiter, requireApiToken, async (req, res) => {
   try {
     const { from, subject, snippet, bodyText, headers } = req.body;
 
@@ -462,7 +492,7 @@ Gövde Metni (İlk kısım): ${bodyText ? bodyText.slice(0, 3500) : "Gövde metn
 });
 
 // Batch analyze multiple emails
-app.post("/api/analyze-batch", async (req, res) => {
+app.post("/api/analyze-batch", sensitiveApiLimiter, requireApiToken, validateBody(AnalyzeBatchSchema), async (req, res) => {
   try {
     const { emails } = req.body;
     if (!Array.isArray(emails) || emails.length === 0) {
@@ -558,7 +588,7 @@ ${JSON.stringify(
 // ==========================================
 // Multi-Model AI Service Endpoint (Factory)
 // ==========================================
-app.post("/api/ai/analyze", async (req, res) => {
+app.post("/api/ai/analyze", sensitiveApiLimiter, requireApiToken, validateBody(AiAnalyzeSchema), async (req, res) => {
   try {
     const { from, subject, snippet, bodyText, headers, provider, ollamaEndpoint, modelName } = req.body;
     const result = await analyzeWithMultiModel({
@@ -584,7 +614,7 @@ app.post("/api/ai/analyze", async (req, res) => {
 // ==========================================
 // Telegram Bot Service (Telegraf) Endpoints
 // ==========================================
-app.post("/api/telegram/config", async (req, res) => {
+app.post("/api/telegram/config", sensitiveApiLimiter, requireApiToken, validateBody(TelegramConfigSchema), async (req, res) => {
   try {
     const { token, chatId } = req.body;
     if (token) saveVaultSecret("telegram_bot_token", token, "telegram", "Telegram Bot Token");
@@ -597,7 +627,7 @@ app.post("/api/telegram/config", async (req, res) => {
   }
 });
 
-app.get("/api/telegram/status", (req, res) => {
+app.get("/api/telegram/status", sensitiveApiLimiter, requireApiToken, (req, res) => {
   try {
     const status = getTelegramStatus();
     res.json(status);
@@ -606,12 +636,9 @@ app.get("/api/telegram/status", (req, res) => {
   }
 });
 
-app.post("/api/telegram/simulate", async (req, res) => {
+app.post("/api/telegram/simulate", sensitiveApiLimiter, requireApiToken, validateBody(TelegramSimulateSchema), async (req, res) => {
   try {
     const { command } = req.body;
-    if (!command) {
-      return res.status(400).json({ error: "Komut gereklidir" });
-    }
     const reply = await processTelegramNaturalLanguageCommand(command);
     res.json({ success: true, reply });
   } catch (error: any) {
@@ -622,7 +649,7 @@ app.post("/api/telegram/simulate", async (req, res) => {
 // ==========================================
 // Gemini Email AI Assistant Endpoints
 // ==========================================
-app.post("/api/ai/assistant/chat", async (req, res) => {
+app.post("/api/ai/assistant/chat", sensitiveApiLimiter, requireApiToken, validateBody(AssistantChatSchema), async (req, res) => {
   try {
     const {
       messages = [],
@@ -773,12 +800,10 @@ Güvenlik: ${emailContext.classification || "Bilinmiyor"} (Skor: %${emailContext
 });
 
 // SMTP Send Message Endpoint
-app.post("/api/smtp/send", async (req, res) => {
+app.post("/api/smtp/send", sensitiveApiLimiter, requireApiToken, validateBody(SmtpSendSchema), async (req, res) => {
   try {
-    const { config, mail } = req.body;
-    if (!config || !mail || !mail.to || !mail.subject || !mail.text) {
-      return res.status(400).json({ error: "Eksik parametreler (config, to, subject, text zorunludur)" });
-    }
+    const config = req.body.config || req.body.smtp;
+    const mail = req.body.mail;
 
     const result = await sendSmtpMessage(config, mail);
     if (result.success) {
@@ -818,8 +843,18 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  // Security mandate: Bind strictly to 127.0.0.1 for local desktop execution.
+  // Only bind to 0.0.0.0 if explicitly running in a container or if ENABLE_LAN_ACCESS='true'.
+  const isContainerEnv = Boolean(
+    process.env.K_SERVICE ||
+    process.env.CONTAINER ||
+    process.env.DOCKER_CONTAINER ||
+    (process.env.NODE_ENV === "production" && (process.env.CLOUD_RUN || process.env.K_REVISION))
+  );
+  const BIND_HOST = process.env.HOST || (isContainerEnv || process.env.ENABLE_LAN_ACCESS === "true" ? "0.0.0.0" : "127.0.0.1");
+
+  app.listen(PORT, BIND_HOST, () => {
+    console.log(`[Sift Server] running on http://${BIND_HOST}:${PORT}`);
   });
 }
 

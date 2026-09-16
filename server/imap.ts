@@ -36,6 +36,22 @@ export interface FetchedImapMessage {
   isRead: boolean;
 }
 
+/**
+ * Resolves TLS options adhering to strict security requirements:
+ * - In production (`NODE_ENV === 'production'`), strict certificate validation (`rejectUnauthorized: true`)
+ *   is MANDATORY and cannot be bypassed under any circumstances.
+ * - In local development / testing, `rejectUnauthorized: true` is active by default.
+ *   It can ONLY be disabled if explicitly allowed via `ALLOW_INSECURE_TLS='true'`.
+ */
+export function getTlsOptions(): { rejectUnauthorized: boolean } {
+  const isProduction = process.env.NODE_ENV === 'production';
+  if (isProduction) {
+    return { rejectUnauthorized: true };
+  }
+  const allowInsecure = process.env.ALLOW_INSECURE_TLS === 'true';
+  return { rejectUnauthorized: !allowInsecure };
+}
+
 export function formatImapError(err: any): string {
   const msg = (err?.message || err?.toString() || '').toLowerCase();
   const code = (err?.code || '').toLowerCase();
@@ -48,37 +64,22 @@ export function formatImapError(err: any): string {
     msg.includes('authenticationfailed') ||
     msg.includes('invalid credentials') ||
     msg.includes('auth') ||
-    msg.includes('login failed') ||
-    msg.includes('command failed') ||
-    responseText.includes('authenticationfailed') ||
+    msg.includes('login') ||
+    code.includes('auth') ||
+    responseText.includes('authentication failed') ||
     responseText.includes('invalid credentials') ||
-    responseText.includes('username and password not accepted') ||
-    code.includes('auth')
+    responseStatus.includes('no')
   ) {
-    return 'IMAP kimlik doğrulaması başarısız. Lütfen 16 haneli uygulama şifrenizi kontrol edin.';
+    return 'IMAP kimlik doğrulaması başarısız. Lütfen e-posta adresinizi ve uygulama şifrenizi (App Password) kontrol edin.';
   }
 
   if (
-    msg.includes('application-specific password required') ||
-    msg.includes('app password')
+    code.includes('etimedout') ||
+    code.includes('timeout') ||
+    msg.includes('timed out') ||
+    msg.includes('timeout')
   ) {
-    return 'Google Uygulama Şifresi zorunludur. Lütfen myaccount.google.com adresinden 16 haneli Uygulama Şifresi oluşturun.';
-  }
-
-  if (
-    msg.includes('enotfound') ||
-    msg.includes('getaddrinfo') ||
-    msg.includes('dns')
-  ) {
-    return 'IMAP sunucusuna bağlanılamadı. Sunucu adresini kontrol edin.';
-  }
-
-  if (
-    msg.includes('etimedout') ||
-    msg.includes('timeout') ||
-    msg.includes('timed out')
-  ) {
-    return 'IMAP sunucusuna bağlanırken zaman aşımı oluştu. Lütfen bağlantınızı kontrol edin.';
+    return 'IMAP sunucusuna bağlanırken zaman aşımı oluştu. Lütfen sunucu adresi ve internet bağlantınızı kontrol edin.';
   }
 
   if (
@@ -93,7 +94,7 @@ export function formatImapError(err: any): string {
     msg.includes('ssl') ||
     msg.includes('tls')
   ) {
-    return 'IMAP SSL/TLS güvenlik anlaşması başarısız oldu. Lütfen port ve SSL ayarlarınızı kontrol edin.';
+    return 'IMAP SSL/TLS güvenlik anlaşması başarısız oldu. Sunucu TLS sertifikası doğrulanamadı.';
   }
 
   return err?.message || 'IMAP sunucusuna bağlanılamadı.';
@@ -106,9 +107,7 @@ export async function testImapConnection(options: ImapConnectOptions): Promise<{
     secure: options.secure,
     auth: options.auth,
     logger: false,
-    tls: {
-      rejectUnauthorized: false,
-    },
+    tls: getTlsOptions(),
   });
 
   try {
@@ -142,9 +141,7 @@ export async function fetchImapMessages(
     secure: options.secure,
     auth: options.auth,
     logger: false,
-    tls: {
-      rejectUnauthorized: false,
-    },
+    tls: getTlsOptions(),
   });
 
   let lock: any = null;
@@ -248,9 +245,7 @@ export async function testSmtpConnection(options: SmtpConnectOptions): Promise<{
     port: options.port,
     secure: options.secure,
     auth: options.auth,
-    tls: {
-      rejectUnauthorized: false,
-    },
+    tls: getTlsOptions(),
   });
 
   try {
@@ -276,9 +271,7 @@ export async function sendSmtpMessage(
     port: options.port,
     secure: options.secure,
     auth: options.auth,
-    tls: {
-      rejectUnauthorized: false,
-    },
+    tls: getTlsOptions(),
   });
 
   try {

@@ -98,9 +98,54 @@ export async function parseResponseSafe<T = any>(response: Response): Promise<T>
   return parsed as T;
 }
 
+let cachedSessionToken: string | null = null;
+let sessionTokenPromise: Promise<string | null> | null = null;
+
 /**
- * Enhanced fetch wrapper that safely parses JSON responses and handles
- * Vercel / Cloud serverless routing failures gracefully.
+ * Retrieves the local API authorization token for secure communication with the backend.
+ * Checks localStorage, import.meta.env, and the /api/auth/session handshake endpoint.
+ */
+export async function getClientApiToken(): Promise<string | null> {
+  if (cachedSessionToken) return cachedSessionToken;
+
+  const storedKey = typeof window !== 'undefined' ? localStorage.getItem('SIFT_API_KEY') : null;
+  if (storedKey) {
+    cachedSessionToken = storedKey;
+    return storedKey;
+  }
+
+  const envKey = (import.meta as any)?.env?.VITE_API_KEY;
+  if (envKey) {
+    cachedSessionToken = envKey;
+    return envKey;
+  }
+
+  if (!sessionTokenPromise) {
+    sessionTokenPromise = (async () => {
+      try {
+        const res = await fetch('/api/auth/session', {
+          headers: { Accept: 'application/json' },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.token) {
+            cachedSessionToken = data.token;
+            return data.token;
+          }
+        }
+      } catch {
+        // Fallback gracefully in case backend is offline or static preview
+      }
+      return null;
+    })();
+  }
+
+  return sessionTokenPromise;
+}
+
+/**
+ * Enhanced fetch wrapper that safely parses JSON responses, injects authentication tokens,
+ * and handles server/network failures gracefully.
  */
 export async function safeFetchJson<T = any>(
   input: RequestInfo | URL,
@@ -110,6 +155,18 @@ export async function safeFetchJson<T = any>(
     Accept: 'application/json',
     ...(init?.headers as Record<string, string> || {}),
   };
+
+  // Automatically attach session/API key to local API routes
+  const inputUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url;
+  if (inputUrl && (inputUrl.startsWith('/api/') || inputUrl.includes('/api/')) && !inputUrl.includes('/api/auth/session')) {
+    if (!mergedHeaders['Authorization'] && !mergedHeaders['x-sift-key']) {
+      const token = await getClientApiToken();
+      if (token) {
+        mergedHeaders['x-sift-key'] = token;
+        mergedHeaders['Authorization'] = `Bearer ${token}`;
+      }
+    }
+  }
 
   let response: Response;
   try {

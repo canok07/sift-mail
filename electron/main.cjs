@@ -3,12 +3,67 @@
 const { app, BrowserWindow, Menu, Tray, nativeImage, shell, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
+const { fork } = require('child_process');
 
 let mainWindow = null;
 let tray = null;
 let isQuitting = false;
+let backendProcess = null;
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+
+function startBackendServer() {
+  // First check if a backend server is already active on port 3000 (e.g. during dev mode)
+  const req = http.get('http://127.0.0.1:3000/api/health', (res) => {
+    if (res.statusCode === 200) {
+      console.log('[Sift Electron] Backend server is already running on port 3000.');
+    }
+  });
+
+  req.on('error', () => {
+    // Port 3000 is not responding, spawn bundled backend server
+    const serverScript = path.join(app.getAppPath(), 'dist', 'server.cjs');
+    if (fs.existsSync(serverScript)) {
+      console.log('[Sift Electron] Spawning local backend process:', serverScript);
+      try {
+        backendProcess = fork(serverScript, [], {
+          env: {
+            ...process.env,
+            PORT: '3000',
+            HOST: '127.0.0.1',
+            NODE_ENV: 'production',
+          },
+          stdio: 'inherit',
+        });
+
+        backendProcess.on('error', (err) => {
+          console.error('[Sift Electron] Backend child process error:', err);
+        });
+
+        backendProcess.on('exit', (code, signal) => {
+          console.log(`[Sift Electron] Backend process exited with code ${code} signal ${signal}`);
+        });
+      } catch (err) {
+        console.error('[Sift Electron] Failed to spawn backend process:', err);
+      }
+    } else {
+      console.log('[Sift Electron] dist/server.cjs not found. Ensure `npm run build` was run before packaging.');
+    }
+  });
+}
+
+function stopBackendServer() {
+  if (backendProcess) {
+    console.log('[Sift Electron] Stopping backend child process...');
+    try {
+      backendProcess.kill('SIGTERM');
+    } catch (err) {
+      // ignore
+    }
+    backendProcess = null;
+  }
+}
 
 function getIconPath() {
   const candidatePaths = [
@@ -237,6 +292,9 @@ if (!gotTheLock) {
       // ignore
     }
 
+    // Spawn bundled backend server if not already running
+    startBackendServer();
+
     createTray();
     createWindow();
 
@@ -251,6 +309,11 @@ if (!gotTheLock) {
 
   app.on('before-quit', () => {
     isQuitting = true;
+    stopBackendServer();
+  });
+
+  app.on('will-quit', () => {
+    stopBackendServer();
   });
 
   app.on('window-all-closed', () => {
