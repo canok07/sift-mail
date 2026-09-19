@@ -67,7 +67,7 @@ async function createWindow() {
   }
   const current = new BrowserWindow({
     width: 1280, height: 850, minWidth: 900, minHeight: 600,
-    title: 'Sift v15 — Mail', backgroundColor: '#09090b',
+    title: 'Sift Mail', backgroundColor: '#09090b', icon: path.join(app.getAppPath(), 'public', 'sift-mail-icon.png'),
     show: false, autoHideMenuBar: true,
     webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true },
   });
@@ -80,6 +80,9 @@ async function createWindow() {
   });
   current.webContents.setWindowOpenHandler(({ url }) => {
     const target = new URL(url);
+    if (target.hostname === 'login.microsoftonline.com' || target.hostname === 'accounts.google.com' || target.hostname.endsWith('.yandex.com')) {
+      return { action: 'allow', overrideBrowserWindowOptions: { width: 520, height: 760, autoHideMenuBar: true, webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true } } };
+    }
     if (target.protocol === 'https:') shell.openExternal(url).catch(() => {});
     return { action: 'deny' };
   });

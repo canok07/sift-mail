@@ -1,6 +1,6 @@
 {
   "app": {
-    "title": "Sift",
+    "title": "Sift Mail",
     "tagline": "AI-Powered Inbox",
     "geminiNLP": "Gemini NLP",
     "multiProvider": "Çoklu Sağlayıcı",
@@ -16,6 +16,11 @@
   "nav": {
     "safeOnly": "Yalnızca Güvenli",
     "allMessages": "Tüm İletiler",
+    "allAccounts": "Tüm hesaplar",
+    "addAccount": "Hesap ekle",
+    "inbox": "Gelen",
+    "sent": "Giden",
+    "spam": "Spam",
     "subscriptions": "Abonelik & Bülten",
     "threats": "Spam & Tehdit",
     "accounts": "Hesaplar",
@@ -41,6 +46,7 @@
   },
   "actions": {
     "scanAllNLP": "Tümünü Tek Tek NLP ile Tara",
+    "scanAI": "AI ile Tara", "sync": "Mailleri Senkronize Et", "syncShort": "Senkronize Et", "syncing": "Senkronize ediliyor…", "loading": "Yükleniyor…", "loadMore": "Daha fazla yükle", "showMore": "Daha fazla göster", "emailCount": "{{count}} ileti", "loadedCount": "{{loaded}} / {{total}} ileti yüklendi", "loaded": "{{count}} yüklü ileti",
     "scanning": "Taranıyor...",
     "searchPlaceholder": "Gönderici, konu veya içerikte ara...",
     "selectAll": "Tümünü Seç",
@@ -104,6 +110,11 @@
     "travel": "Seyahat & Rezervasyon",
     "other": "Diğer Güvenli"
   },
+  "compose": {"new":"Yeni","title":"Oluştur","from":"Gönderen","to":"Alıcı","subject":"Konu","body":"İleti","send":"Gönder","sending":"Gönderiliyor…","required":"Alıcı, konu ve içerik zorunludur.","loginRequired":"Gönderen hesaba yeniden giriş yapın.","error":"E-posta gönderilemedi."},
+  "labels": {"title":"Etiketler","create":"Etiket oluştur","name":"Etiket adı","empty":"Henüz etiket yok"},
+  "dateGroups": {"today":"Bugün","week":"Bu Hafta","month":"Bu Ay","older":"Daha Eski"},
+  "ai": {"assistant":"AI Asistan"},
+  "settings": {"title":"Ayarlar","tabs":{"general":"Genel","interface":"Arayüz","ai":"Yapay Zekâ","help":"Yardım","about":"Hakkında"},"general":{"language":"Dil","security":"Gizlilik ve güvenlik","trackers":"Takip piksellerini engelle","vault":"Şifreli kasa","desktop":"Masaüstü kurulumu"},"interface":{"theme":"Tema","customize":"Görünümü özelleştir","themes":{"light":"Yumuşak açık","dark":"Koyu","oled":"OLED","ocean":"Okyanus","forest":"Orman"},"accent":"Vurgu rengi","font":"Yazı tipi","fontSize":"Yazı boyutu","pageSize":"Ekrandaki mail sayısı","background":"Arka plan resmi"},"ai":{"title":"Yapay zekâ sağlayıcıları","description":"Gemini, GPT, Claude veya yerel Ollama modelini bağlayın. Anahtarlar sunucunun şifreli kasasında tutulur.","local":"Yerel","apiKey":"API anahtarı","model":"Model adı (isteğe bağlı)","test":"Bağlantıyı test et","save":"Kaydet","saving":"İşleniyor…","success":"Bağlantı başarılı.","error":"Bağlantı kurulamadı."},"help":{"title":"Yardım merkezi","askAI":"AI asistana sor","accounts":{"q":"Nasıl hesap eklerim?","a":"Hesap ekle düğmesinden sağlayıcı seçin; OAuth mevcutsa sağlayıcının sayfasını, aksi halde uygulama parolasıyla IMAP'i kullanın."},"sync":{"q":"Senkronizasyon nasıl çalışır?","a":"Uygulamaya hemen girersiniz; son iletiler arka planda klasör bazında yüklenir."},"password":{"q":"Parolam saklanıyor mu?","a":"Varsayılan oturum bilgileri yalnızca bellekte tutulur; isterseniz şifreli kasayı kullanabilirsiniz."},"ai":{"q":"AI mail gönderebilir mi?","a":"AI öneri hazırlar; gönderme ve silme gibi işlemler kullanıcı onayı gerektirir."}},"about":{"title":"Sift Mail hakkında","description":"Gmail, Outlook, Apple, Yandex ve standart IMAP/SMTP hesaplarını tek yerde yöneten özelleştirilebilir masaüstü mail istemcisi.","version":"Sürüm","engine":"Altyapı","developer":"Sahip / geliştirici","hidden":"Şimdilik gizli"}},
   "toast": {
     "markedSafe": "İleti güvenli olarak onaylandı ve arşivlendi.",
     "unsubStarted": "Abonelikten çıkma işlemi başlatıldı.",

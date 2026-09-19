@@ -21,10 +21,12 @@ import {
   ConfirmationModalProps,
   ConnectedAccount,
   MailProvider,
+  UserLabel,
 } from './types';
 import {
   INITIAL_ACCOUNTS,
   PROVIDERS_META,
+  detectMailProvider,
 } from './services/mailProviderManager';
 import {
   DynamicEmailLoginCard,
@@ -45,6 +47,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { AIActionModal } from './components/AIActionModal';
 import { AIAssistantDrawer } from './components/AIAssistantDrawer';
 import { EmailReplyModal } from './components/EmailReplyModal';
+import { ComposeModal } from './components/ComposeModal';
 import { motion, AnimatePresence } from 'motion/react';
 import { useSettingsStore } from './stores/useSettingsStore';
 import { ProposedAIAction, generateSmartAIAction } from './services/ai/langchainTools';
@@ -85,6 +88,11 @@ export default function App() {
     aiProvider,
     ollamaEndpoint,
     autoDeleteUnsubscribed,
+    backgroundImage,
+    accentColor,
+    fontFamily,
+    fontSize,
+    pageSize,
   } = useSettingsStore();
 
   const handleThemeChange = (newTheme: AppTheme) => {
@@ -93,17 +101,24 @@ export default function App() {
 
   useEffect(() => {
     const root = document.documentElement;
-    root.classList.remove('dark', 'theme-oled');
+    root.classList.remove('dark', 'theme-oled', 'theme-ocean', 'theme-forest');
     if (theme === 'oled') {
       root.classList.add('dark', 'theme-oled');
       document.body.style.backgroundColor = '#000000';
-    } else if (theme === 'dark') {
+    } else if (theme === 'dark' || theme === 'ocean' || theme === 'forest') {
       root.classList.add('dark');
-      document.body.style.backgroundColor = '#121212';
+      if (theme !== 'dark') root.classList.add(`theme-${theme}`);
+      document.body.style.backgroundColor = theme === 'ocean' ? '#071923' : theme === 'forest' ? '#0d1b13' : '#121212';
     } else {
       document.body.style.backgroundColor = '#f8f9fa';
     }
-  }, [theme]);
+    root.style.setProperty('--sift-accent', accentColor);
+    root.style.setProperty('--sift-font-size', `${fontSize}px`);
+    document.body.style.fontFamily = fontFamily;
+    document.body.style.backgroundImage = backgroundImage ? `linear-gradient(rgba(0,0,0,.35),rgba(0,0,0,.35)),url(${backgroundImage})` : '';
+    document.body.style.backgroundSize = 'cover';
+    document.body.style.backgroundAttachment = 'fixed';
+  }, [theme, accentColor, fontFamily, fontSize, backgroundImage]);
 
   // Modals & HITL AI Actions
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -112,6 +127,7 @@ export default function App() {
 
   // Dynamic Session Credentials (transient in-memory, never stored on disk or server)
   const [sessionCredentials, setSessionCredentials] = useState<DynamicLoginCredentials | null>(null);
+  const [credentialsByAccount, setCredentialsByAccount] = useState<Record<string, DynamicLoginCredentials>>({});
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [isSyncingEmails, setIsSyncingEmails] = useState(false);
@@ -140,6 +156,16 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedEmailIds, setSelectedEmailIds] = useState<Set<string>>(new Set());
   const [detailEmail, setDetailEmail] = useState<EmailMessage | null>(null);
+  const [isComposeOpen, setIsComposeOpen] = useState(false);
+  const [visibleCount, setVisibleCount] = useState<number>(pageSize);
+  const [activeLabel, setActiveLabel] = useState<string | null>(null);
+  const [userLabels, setUserLabels] = useState<UserLabel[]>(() => {
+    try { return JSON.parse(localStorage.getItem('sift_user_labels') || '[]'); } catch { return []; }
+  });
+
+  useEffect(() => { setVisibleCount(pageSize); }, [pageSize, activeTab, activeAccountId, searchQuery, activeLabel]);
+  useEffect(() => { localStorage.setItem('sift_user_labels', JSON.stringify(userLabels)); }, [userLabels]);
+  const knownContacts = useMemo(() => Array.from(new Set(emails.flatMap(email => [email.fromEmail || '', ...(email.to || [])]).filter(Boolean))).sort(), [emails]);
 
   // Safe Category state & Future Rules
   const [selectedCategory, setSelectedCategory] = useState<SafeCategory | 'all'>('all');
@@ -280,14 +306,25 @@ export default function App() {
   // Central Direct IMAP Mail Synchronization Handler (Dynamic In-Memory)
   const handleLoginAndSync = useCallback(
     async (credentials: DynamicLoginCredentials) => {
-      setIsSyncingEmails(true);
       setSyncError(null);
-      showToast('IMAP sunucusuna bağlanılıyor ve iletiler çekiliyor...', 'info');
+      const cleanEmail = credentials.email.trim().toLowerCase();
+      const accountId = accounts.find(a => a.email.toLowerCase() === cleanEmail)?.id || `acc-${Date.now()}`;
+      const discovered = detectMailProvider(cleanEmail);
+      const shellAccount: ConnectedAccount = {
+        id: accountId, provider: discovered.provider, email: cleanEmail, displayName: cleanEmail,
+        status: 'syncing', isPrimary: accounts.length === 0, totalCount: 0, unreadCount: 0, mailboxes: [],
+        imapConfig: { host: credentials.host || discovered.imapHost, port: credentials.port || 993, secure: credentials.secure !== false, username: cleanEmail, smtpHost: discovered.smtpHost, smtpPort: discovered.smtpPort },
+      };
+      setAccounts(prev => [shellAccount, ...prev.filter(a => a.id !== accountId)]);
+      setActiveAccountId(accountId);
+      setSessionCredentials(credentials);
+      setCredentialsByAccount(prev => ({...prev, [accountId]: credentials}));
+      setIsLoginModalOpen(false);
+      setIsMultiAccountModalOpen(false);
+      showToast('Hesap eklendi. İletiler arka planda senkronize ediliyor…', 'info');
+      setIsSyncingEmails(true);
 
-      try {
-        // Generate the ID before syncing so every returned message belongs to
-        // the account that is selected in the sidebar.
-        const accountId = accounts.find(a => a.email.toLowerCase() === credentials.email.trim().toLowerCase())?.id || `acc-${Date.now()}`;
+      void (async () => { try {
         const { messages, accountEmail, provider, mailboxes } = await syncEmailsFromBackend({
           email: credentials.email,
           password: credentials.password,
@@ -298,14 +335,9 @@ export default function App() {
           accountId,
         });
 
-        // Retain credentials in transient component memory for this active session
-        setSessionCredentials(credentials);
-
-        // Automatically apply auto rules to newly fetched emails
         const categorized = applyRulesToEmails(messages, autoRules);
         setEmails(prev => [...prev.filter(e => e.accountId !== accountId), ...categorized]);
 
-        // Update or create connected account representation
         const newAccount: ConnectedAccount = {
           id: accountId,
           mailboxes,
@@ -325,12 +357,7 @@ export default function App() {
           },
         };
 
-        setAccounts((prev) => {
-          const filtered = prev.filter((a) => a.email !== accountEmail);
-          return [newAccount, ...filtered];
-        });
-        setActiveAccountId(accountId);
-        setIsLoginModalOpen(false);
+        setAccounts(prev => prev.map(a => a.id === accountId ? newAccount : a));
 
         showToast(
           `${categorized.length} adet e-posta başarıyla senkronize edildi!`,
@@ -343,22 +370,25 @@ export default function App() {
             ? error
             : (error as any)?.message || (error as any)?.error || JSON.stringify(error);
         setSyncError(errorMessage);
+        setAccounts(prev => prev.map(a => a.id === accountId ? {...a, status:'error'} : a));
         showToast(errorMessage, 'error');
-        throw error;
       } finally {
         setIsSyncingEmails(false);
-      }
+      } })();
     },
     [showToast, applyRulesToEmails, autoRules, accounts]
   );
 
   const handleSyncEmails = useCallback(async () => {
-    if (!sessionCredentials) {
+    const targets = accounts.filter(a => activeAccountId === 'all' || a.id === activeAccountId);
+    if (!targets.length) { setIsLoginModalOpen(true); return; }
+    const credentials = targets.map(a => credentialsByAccount[a.id]).filter(Boolean);
+    if (!credentials.length) {
       setIsLoginModalOpen(true);
       return;
     }
-    await handleLoginAndSync(sessionCredentials);
-  }, [sessionCredentials, handleLoginAndSync]);
+    for (const credential of credentials) await handleLoginAndSync(credential);
+  }, [accounts, activeAccountId, credentialsByAccount, handleLoginAndSync]);
 
   // Account management handlers
   const handleAddAccount = (
@@ -964,6 +994,8 @@ export default function App() {
         if (!matchFrom && !matchSubject && !matchSnippet) return false;
       }
 
+      if (activeLabel && !email.labels?.includes(`user:${activeLabel}`)) return false;
+
       // Tab filter
       if (['inbox', 'sent', 'drafts', 'trash', 'archive'].includes(activeTab)) return email.folderType === activeTab;
       if (activeTab === 'threats') return email.folderType === 'spam';
@@ -993,7 +1025,26 @@ export default function App() {
 
       return true; // 'all'
     }).sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
-  }, [emails, activeAccountId, activeTab, searchQuery, selectedCategory]);
+  }, [emails, activeAccountId, activeTab, searchQuery, selectedCategory, activeLabel]);
+
+  const paginatedEmails = useMemo(() => filteredEmails.slice(0, visibleCount), [filteredEmails, visibleCount]);
+  const dateGroupedEmails = useMemo(() => {
+    const now = new Date();
+    const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const startWeek = startToday - ((now.getDay() + 6) % 7) * 86400000;
+    const startMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const groups = [
+      {key:'today', title:t('dateGroups.today'), emails:[] as EmailMessage[]},
+      {key:'week', title:t('dateGroups.week'), emails:[] as EmailMessage[]},
+      {key:'month', title:t('dateGroups.month'), emails:[] as EmailMessage[]},
+      {key:'older', title:t('dateGroups.older'), emails:[] as EmailMessage[]},
+    ];
+    for (const email of paginatedEmails) {
+      const time = Date.parse(email.date);
+      (time >= startToday ? groups[0] : time >= startWeek ? groups[1] : time >= startMonth ? groups[2] : groups[3]).emails.push(email);
+    }
+    return groups.filter(group => group.emails.length);
+  }, [paginatedEmails, t]);
 
   const handleSelectAll = () => {
     setSelectedEmailIds(new Set(filteredEmails.map((e) => e.id)));
@@ -1004,17 +1055,17 @@ export default function App() {
   const folderTotal = visibleAccounts.reduce((sum, account) => sum + (account.mailboxes || []).filter(m => m.type === mailboxType).reduce((n,m) => n + (m.totalMessages || 0), 0), 0);
   const folderLoaded = emails.filter(e => visibleAccounts.some(a => a.id === e.accountId) && e.folderType === mailboxType).length;
   const handleLoadMore = async () => {
-    if (!sessionCredentials) { setIsLoginModalOpen(true); return; }
     setIsSyncingEmails(true);
     setSyncError(null);
     try {
       for (const account of visibleAccounts) {
+        const accountCredentials = credentialsByAccount[account.id];
+        if (!accountCredentials) { setIsLoginModalOpen(true); continue; }
         const mailbox = account.mailboxes?.find(m => m.type === mailboxType);
         if (!mailbox) continue;
         const offset = emails.filter(e => e.accountId === account.id && e.folder === mailbox.path).length;
         if (offset >= (mailbox.totalMessages || 0)) continue;
-        if (account.email !== sessionCredentials.email) throw new Error(`${account.email} hesabına yeniden giriş yapın.`);
-        const result = await syncEmailsFromBackend({...sessionCredentials, accountId: account.id, folder: mailbox.path, offset, maxResults: 100});
+        const result = await syncEmailsFromBackend({...accountCredentials, accountId: account.id, folder: mailbox.path, offset, maxResults: pageSize});
         setEmails(prev => { const ids = new Set(prev.map(e => e.id)); return [...prev, ...result.messages.filter(e => !ids.has(e.id))]; });
       }
     } catch (err: any) { setSyncError(err.message); showToast(err.message, 'error'); }
@@ -1071,7 +1122,7 @@ export default function App() {
       className={`min-h-screen flex flex-col font-sans transition-colors duration-200 ${
         theme === 'oled'
           ? 'bg-[#000000] text-zinc-100'
-          : theme === 'dark'
+          : theme !== 'light'
           ? 'bg-[#09090b] text-zinc-300'
           : 'bg-[#f8f9fa] text-slate-800'
       }`}
@@ -1111,6 +1162,7 @@ export default function App() {
         onRefresh={handleSyncEmails}
         isLoading={isLoading || isSyncingEmails}
         onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
+        onCompose={() => setIsComposeOpen(true)}
         theme={theme}
       />
 
@@ -1135,6 +1187,12 @@ export default function App() {
           onToggleAssistant={() => setIsAssistantOpen((prev) => !prev)}
           isAssistantOpen={isAssistantOpen}
           theme={theme}
+          onCompose={() => setIsComposeOpen(true)}
+          labels={userLabels}
+          activeLabel={activeLabel}
+          onSelectLabel={(id) => { setActiveLabel(id); if (id) setActiveTab('all'); }}
+          onCreateLabel={(name,color) => setUserLabels(prev => [...prev, {id:`label-${Date.now()}`,name,color}])}
+          onDeleteLabel={(id) => { setUserLabels(prev=>prev.filter(x=>x.id!==id)); setEmails(prev=>prev.map(e=>({...e,labels:e.labels?.filter(x=>x!==`user:${id}`)}))); if(activeLabel===id)setActiveLabel(null); }}
         />
 
         {/* Sağ Ana İçerik Alanı: E-posta Listesi & Okuma Alanı */}
@@ -1154,8 +1212,8 @@ export default function App() {
             <>
               {syncError && <p role="alert" className="text-sm text-rose-500">{syncError}</p>}
               <div className="flex items-center justify-between text-sm text-zinc-500">
-                <span>{['inbox','sent','threats'].includes(activeTab) ? `${folderLoaded} / ${folderTotal} ileti yüklendi` : `${filteredEmails.length} yüklü ileti`}</span>
-                {folderLoaded < folderTotal && <button disabled={isSyncingEmails} onClick={handleLoadMore} className="px-3 py-2 rounded-lg bg-emerald-500/10 text-emerald-500 disabled:opacity-50">{isSyncingEmails ? 'Yükleniyor…' : 'Daha fazla yükle'}</button>}
+                <span>{['inbox','sent','threats'].includes(activeTab) ? t('actions.loadedCount',{loaded:folderLoaded,total:folderTotal}) : t('actions.loaded',{count:filteredEmails.length})}</span>
+                {folderLoaded < folderTotal && <button disabled={isSyncingEmails} onClick={handleLoadMore} className="px-3 py-2 rounded-lg bg-emerald-500/10 text-emerald-500 disabled:opacity-50">{isSyncingEmails ? t('actions.loading') : t('actions.loadMore')}</button>}
               </div>
               {/* Action Toolbar */}
               <FilterBar
@@ -1299,24 +1357,7 @@ export default function App() {
             </div>
           ) : (
             /* FLAT LIST VIEW */
-            filteredEmails.map((email) => (
-              <EmailCard
-                key={email.id}
-                email={email}
-                isSelected={selectedEmailIds.has(email.id)}
-                onToggleSelect={handleToggleSelect}
-                onOpenDetail={(item) => setDetailEmail(item)}
-                onAnalyze={handleAnalyzeEmail}
-                onUnsubscribe={handleUnsubscribe}
-                onRequestTrash={handleRequestTrash}
-                onReply={handleReplyEmail}
-                onUpdateCategory={handleUpdateCategory}
-                onMarkSafeArchive={handleMarkSafeArchive}
-                onUnsubscribeAndPurge={handleUnsubscribeAndPurge}
-                onOpenAssistant={handleOpenAssistant}
-                theme={theme}
-              />
-            ))
+            <div className="space-y-6">{dateGroupedEmails.map(group=><section key={group.key}><h2 className="sticky top-0 z-10 py-2 px-1 text-xs font-bold uppercase tracking-widest opacity-55 backdrop-blur">{group.title}</h2><div className="space-y-2">{group.emails.map(email=><EmailCard key={email.id} email={email} isSelected={selectedEmailIds.has(email.id)} onToggleSelect={handleToggleSelect} onOpenDetail={(item)=>setDetailEmail(item)} onAnalyze={handleAnalyzeEmail} onUnsubscribe={handleUnsubscribe} onRequestTrash={handleRequestTrash} onReply={handleReplyEmail} onUpdateCategory={handleUpdateCategory} onMarkSafeArchive={handleMarkSafeArchive} onUnsubscribeAndPurge={handleUnsubscribeAndPurge} onOpenAssistant={handleOpenAssistant} theme={theme}/>)}</div></section>)}{visibleCount<filteredEmails.length&&<button onClick={()=>setVisibleCount(v=>v+pageSize)} className="w-full py-3 rounded-xl bg-zinc-500/10 text-sm">{t('actions.showMore')}</button>}</div>
           )}
         </div>
         </>
@@ -1338,6 +1379,8 @@ export default function App() {
         onUnsubscribeAndPurge={handleUnsubscribeAndPurge}
         onOpenAssistant={handleOpenAssistant}
         theme={theme}
+        userLabels={userLabels}
+        onToggleLabel={(emailId,labelId)=>setEmails(prev=>prev.map(email=>email.id!==emailId?email:{...email,labels:email.labels?.includes(`user:${labelId}`)?email.labels.filter(x=>x!==`user:${labelId}`):[...(email.labels||[]),`user:${labelId}`]}))}
       />
 
       {/* Auto-Rules & Future Categorization Modal */}
@@ -1485,6 +1528,20 @@ export default function App() {
       </AnimatePresence>
 
       {/* Direct Send Email Reply Modal */}
+      <ComposeModal
+        isOpen={isComposeOpen}
+        onClose={() => setIsComposeOpen(false)}
+        accounts={accounts}
+        contacts={knownContacts}
+        credentials={credentialsByAccount}
+        theme={theme}
+        onSent={({to,subject,body,accountId}) => {
+          const account=accounts.find(a=>a.id===accountId);
+          setEmails(prev=>[{id:`sent-${Date.now()}`,accountId,provider:account?.provider,from:account?.email||'',fromEmail:account?.email||'',to:[to],subject,date:new Date().toISOString(),snippet:body.slice(0,160),bodyText:body,isRead:true,folder:'Sent',folderType:'sent',labels:['SENT']},...prev]);
+          showToast('E-posta gönderildi.', 'success');
+        }}
+      />
+
       <EmailReplyModal
         isOpen={isReplyModalOpen}
         onClose={() => setIsReplyModalOpen(false)}

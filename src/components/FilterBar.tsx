@@ -8,6 +8,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { AppTheme } from './Header';
+import { useTranslation } from 'react-i18next';
 
 interface FilterBarProps {
   selectedCount: number;
@@ -36,6 +37,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   isSyncingEmails = false,
   theme = 'light',
 }) => {
+  const {t}=useTranslation();
   const isOled = theme === 'oled';
   const isDark = theme === 'dark' || isOled;
 
@@ -56,7 +58,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         <button
           onClick={isAllSelected ? onDeselectAll : onSelectAll}
           className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 font-semibold text-zinc-700 dark:text-zinc-300 transition-colors"
-          title={isAllSelected ? 'Tüm seçimleri kaldır' : 'Tüm iletileri seç'}
+          title={isAllSelected ? t('actions.deselect') : t('actions.selectAll')}
         >
           {isAllSelected ? (
             <CheckSquare className="w-4 h-4 text-emerald-500" />
@@ -65,13 +67,13 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           ) : (
             <Square className="w-4 h-4 opacity-50" />
           )}
-          <span>{isAllSelected ? 'Tümü Seçili' : 'Tümünü Seç'}</span>
+          <span>{isAllSelected ? t('actions.deselect') : t('actions.selectAll')}</span>
         </button>
 
         {selectedCount > 0 && (
           <div className="flex items-center gap-2 animate-fade-in pl-2 border-l border-black/10 dark:border-white/10">
             <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-              {selectedCount} seçildi
+              {t('actions.selectedCount',{count:selectedCount})}
             </span>
 
             {/* Toplu Çöpe At */}
@@ -80,7 +82,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-600 dark:text-rose-400 font-semibold text-[11px] transition-colors"
             >
               <Trash2 className="w-3.5 h-3.5" />
-              <span>Çöpe At</span>
+              <span>{t('actions.trash')}</span>
             </button>
 
             {/* Toplu Abonelikten Çık */}
@@ -89,7 +91,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-600 dark:text-sky-400 font-semibold text-[11px] transition-colors"
             >
               <ExternalLink className="w-3.5 h-3.5" />
-              <span>Abonelikten Çık</span>
+              <span>{t('actions.unsubscribe')}</span>
             </button>
           </div>
         )}
@@ -98,7 +100,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
       {/* Sağ: Toplam Sayı, Mailleri Senkronize Et & Tümünü AI ile Tara */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
         <span className="text-[11px] text-zinc-400 dark:text-zinc-500 hidden sm:inline">
-          {totalCount} ileti
+          {t('actions.emailCount',{count:totalCount})}
         </span>
 
         {/* Mailleri Senkronize Et Butonu */}
@@ -113,10 +115,10 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               className={`w-3.5 h-3.5 ${isSyncingEmails ? 'animate-spin' : ''}`}
             />
             <span className="hidden sm:inline">
-              {isSyncingEmails ? 'Senkronize Ediliyor...' : 'Mailleri Senkronize Et'}
+              {isSyncingEmails ? t('actions.syncing') : t('actions.sync')}
             </span>
             <span className="sm:hidden">
-              {isSyncingEmails ? 'Yükleniyor...' : 'Senkronize Et'}
+              {isSyncingEmails ? t('actions.loading') : t('actions.syncShort')}
             </span>
           </button>
         )}
@@ -129,7 +131,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           title="Yüklenen iletileri seçili AI sağlayıcısıyla analiz et"
         >
           <Sparkles className={`w-3.5 h-3.5 ${isScanning ? 'animate-spin text-emerald-400' : ''}`} />
-          <span>{isScanning ? 'Taranıyor...' : 'AI ile Tara'}</span>
+          <span>{isScanning ? t('actions.scanning') : t('actions.scanAI')}</span>
         </button>
       </div>
     </div>

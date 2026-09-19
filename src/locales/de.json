@@ -1,6 +1,6 @@
 {
   "app": {
-    "title": "Sift",
+    "title": "Sift Mail",
     "tagline": "AI-Powered Inbox",
     "geminiNLP": "Gemini NLP",
     "multiProvider": "Multi-Provider",
@@ -16,6 +16,11 @@
   "nav": {
     "safeOnly": "Nur Sicher",
     "allMessages": "Alle E-Mails",
+    "allAccounts": "Alle Konten",
+    "addAccount": "Konto hinzufügen",
+    "inbox": "Posteingang",
+    "sent": "Gesendet",
+    "spam": "Spam",
     "subscriptions": "Newsletter & Abos",
     "threats": "Spam & Bedrohungen",
     "accounts": "Konten",
@@ -41,6 +46,7 @@
   },
   "actions": {
     "scanAllNLP": "Alle mit NLP prüfen",
+    "scanAI": "Mit KI prüfen", "sync": "E-Mails synchronisieren", "syncShort": "Synchronisieren", "syncing": "Wird synchronisiert…", "loading": "Wird geladen…", "loadMore": "Mehr laden", "showMore": "Mehr anzeigen", "emailCount": "{{count}} E-Mails", "loadedCount": "{{loaded}} / {{total}} E-Mails geladen", "loaded": "{{count}} geladene E-Mails",
     "scanning": "Wird geprüft...",
     "searchPlaceholder": "Nach Absender, Betreff oder Inhalt suchen...",
     "selectAll": "Alle auswählen",
@@ -104,6 +110,11 @@
     "travel": "Reisen & Buchungen",
     "other": "Sonstige Sicher"
   },
+  "compose": {"new":"Neu","title":"Verfassen","from":"Von","to":"An","subject":"Betreff","body":"Nachricht","send":"Senden","sending":"Wird gesendet…","required":"Empfänger, Betreff und Nachricht sind erforderlich.","loginRequired":"Bitte erneut beim Absenderkonto anmelden.","error":"E-Mail konnte nicht gesendet werden."},
+  "labels": {"title":"Labels","create":"Label erstellen","name":"Labelname","empty":"Noch keine Labels"},
+  "dateGroups": {"today":"Heute","week":"Diese Woche","month":"Dieser Monat","older":"Älter"},
+  "ai": {"assistant":"KI-Assistent"},
+  "settings": {"title":"Einstellungen","tabs":{"general":"Allgemein","interface":"Oberfläche","ai":"Künstliche Intelligenz","help":"Hilfe","about":"Info"},"general":{"language":"Sprache","security":"Datenschutz und Sicherheit","trackers":"Tracking-Pixel blockieren","vault":"Verschlüsselter Tresor","desktop":"Desktop-Setup"},"interface":{"theme":"Design","customize":"Darstellung anpassen","themes":{"light":"Sanft hell","dark":"Dunkel","oled":"OLED","ocean":"Ozean","forest":"Wald"},"accent":"Akzentfarbe","font":"Schriftart","fontSize":"Schriftgröße","pageSize":"Angezeigte E-Mails","background":"Hintergrundbild"},"ai":{"title":"KI-Anbieter","description":"Gemini, GPT, Claude oder lokales Ollama verbinden. Schlüssel liegen im verschlüsselten Server-Tresor.","local":"Lokal","apiKey":"API-Schlüssel","model":"Modellname (optional)","test":"Verbindung testen","save":"Speichern","saving":"Wird verarbeitet…","success":"Verbindung erfolgreich.","error":"Verbindung fehlgeschlagen."},"help":{"title":"Hilfezentrum","askAI":"KI-Assistenten fragen","accounts":{"q":"Wie füge ich ein Konto hinzu?","a":"Unter Konto hinzufügen einen Anbieter wählen; wenn OAuth verfügbar ist dessen Seite verwenden, sonst IMAP mit App-Passwort."},"sync":{"q":"Wie funktioniert die Synchronisierung?","a":"Die App öffnet sofort; aktuelle Nachrichten werden danach ordnerweise im Hintergrund geladen."},"password":{"q":"Wird mein Passwort gespeichert?","a":"Sitzungsdaten bleiben standardmäßig nur im Speicher; der verschlüsselte Tresor ist optional."},"ai":{"q":"Kann die KI E-Mails senden?","a":"Die KI erstellt Vorschläge; Senden und Löschen benötigen weiterhin Ihre Bestätigung."}},"about":{"title":"Über Sift Mail","description":"Anpassbarer Desktop-Client für Gmail, Outlook, Apple, Yandex und Standard-IMAP/SMTP-Konten.","version":"Version","engine":"System","developer":"Inhaber / Entwickler","hidden":"Derzeit verborgen"}},
   "toast": {
     "markedSafe": "E-Mail als sicher bestätigt und archiviert.",
     "unsubStarted": "Abmeldevorgang gestartet.",

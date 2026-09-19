@@ -12,11 +12,11 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icon.svg', 'pwa-192x192.png', 'pwa-512x512.png'],
+        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'sift-mail-icon.png', 'pwa-192x192.png', 'pwa-512x512.png'],
         manifest: {
           id: '/',
-          name: 'Sift — AI-Powered Inbox',
-          short_name: 'Sift',
+          name: 'Sift Mail — Multi-Account Email Client',
+          short_name: 'Sift Mail',
           description: 'An AI-powered, minimalist desktop email client for achieving Inbox Zero with advanced spam and tracker protection.',
           theme_color: '#09090b',
           background_color: '#09090b',

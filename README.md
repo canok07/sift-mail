@@ -1,8 +1,19 @@
 # Sift Mail
 
-Sift, Electron tabanlı bir masaüstü e-posta istemcisidir. Gelen Kutusu, Gönderilenler ve Spam klasörlerini ayrı gösterir; e-posta okumayı ve isteğe bağlı AI analizini tek uygulamada toplar.
+Sift Mail, Electron tabanlı çoklu hesap masaüstü e-posta istemcisidir. Gmail, Outlook, Apple, Yandex ve standart IMAP/SMTP hesaplarını; e-posta okumayı ve isteğe bağlı AI analizini tek uygulamada toplar.
 
-## v15 — 0.5.2
+## v16 — 0.6.0
+
+- **Hızlı açılış:** Hesap arayüze hemen eklenir; IMAP klasörleri ve son iletiler arka planda yüklenir.
+- **Çoklu hesap:** Hesaplar sol menüde ayrı görünür; Tüm İletiler, Gelen, Giden ve Spam hesap bazında veya birleşik kullanılabilir.
+- **Tarih ve sayfalama:** İletiler tarihe göre sıralanır, Bugün / Bu Hafta / Bu Ay / Daha Eski gruplarına ayrılır; 10/20/50/100 görünür ileti seçilebilir.
+- **Okuma deneyimi:** ESC ile kapanan ileti görünümü ve aktif temaya uyan korumalı HTML/salt metin arka planı.
+- **Oluştur ve kişiler:** Sıfırdan ileti oluşturma, hesap seçme ve daha önceki gönderen/alıcı adreslerinden otomatik öneri.
+- **Etiketler:** Kullanıcı etiketi oluşturma, silme, iletiye uygulama ve etiketle filtreleme.
+- **Tam sayfa Ayarlar:** Genel, Arayüz, Yapay Zekâ, Yardım ve Hakkında sayfaları; tema, özel renk, arka plan, yazı tipi/boyutu ve ileti sayısı ayarları.
+- **Dil:** Yeni temel ekranlar Türkçe, Almanca ve İngilizce çeviri sistemine bağlandı.
+- **Sağlayıcılar:** Microsoft OAuth/PKCE ve Gmail, Yandex, Apple ile standart IMAP uygulama parolası akışları; manuel kurumsal IMAP/SMTP seçeneği.
+- **Kimlik:** Sift Mail adı, 0.6.0 paket kimliği ve Windows/PWA için yeni özgün uygulama ikonu.
 
 - **Klasör ayrımı:** Gelen Kutusu, Gönderilenler ve Spam ayrı menülerde açılır. Gönderilen iletiler gelen kutusuna karışmaz.
 - **Doğru ileti içeriği:** MIME, quoted-printable ve base64 içerikleri çözülür. Türkçe/Almanca karakterler ve tam metin korunur; yalnızca liste önizlemesi kısaltılır.
@@ -15,7 +26,7 @@ Sift, Electron tabanlı bir masaüstü e-posta istemcisidir. Gelen Kutusu, Gönd
 - **Masaüstü başlangıcı:** Electron, yerel sunucu hazır olduğunda arayüzü açar. HTML içeren geçerli JSON yanıtlarının yanlışlıkla hata sayılması düzeltildi.
 - **Hesaplar:** Hesap bağlama gerçek senkronizasyonu bekler; başka hesaba ait yüklenmiş iletiler korunur.
 
-Ayrıntılar: [Değişiklik notları](DEGISIKLIKLER-v15.md).
+Ayrıntılar: [v16 değişiklik notları](DEGISIKLIKLER-v16.md).
 
 ## Çalıştırma
 
@@ -40,7 +51,7 @@ npm run build:win
 
 ## Hesaplar ve AI bağlantıları
 
-Gmail bağlantısında Google uygulama şifresi kullanılır. Microsoft/Hotmail bağlantısı OAuth yapılandırması gerektirir; normal hesap şifresiyle giriş beklenmemelidir.
+Gmail bağlantısında Google uygulama şifresi kullanılabilir. Microsoft/Hotmail için OAuth/PKCE desteklenir ve `MICROSOFT_CLIENT_ID` gerekir. Apple uygulamaya özel parola ister. Yandex OAuth istemci yapılandırması yoksa uygulama parolasıyla IMAP kullanılabilir. Normal Microsoft hesap parolasıyla giriş beklenmemelidir.
 
 AI ayarlarında Gemini, OpenAI, Anthropic ve Ollama sağlayıcı seçenekleri bulunur. Seçeneklerin görünmesi tek başına bağlantının kurulmuş olduğu anlamına gelmez; ilgili sağlayıcı yapılandırılmalı ve bağlantısı test edilmelidir.
 
@@ -48,11 +59,11 @@ HTML iletiler script çalıştırmayan ayrı bir iframe içinde gösterilir. Dı
 
 ## Test sonuçları
 
-v15 için şu kontroller tamamlandı:
+v16 için şu kontroller tamamlandı:
 
 - TypeScript: `npm run lint`
 - 19 güvenlik testi ve 4 posta/MIME testi: `npm test`
-- Chrome arayüz testi: hesap bağlama, klasör ayrımı, sayfalama, ileti gösterimi, script izolasyonu ve isteğe bağlı Telegram alanı
+- Chrome arayüz testi: arka plan senkronizasyonu, klasör ayrımı, sayfalama, MIME/script izolasyonu, ESC, yeni ileti, etiket, tam sayfa ayarlar ve dil geçişi
 - Paket testi: Electron çalışma ortamı, paketlenmiş sunucu bağımlılıkları, sağlık uç noktası ve ön yüz dosyaları
 
 Arayüz testini çalıştırmak için Chrome kurulu olmalıdır:

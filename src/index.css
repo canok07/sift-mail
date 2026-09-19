@@ -1,9 +1,11 @@
 @import "tailwindcss";
 
 :root {
-  --bg-canvas: #f8f9fa;
-  --bg-card: #ffffff;
-  --bg-elevated: #f1f3f5;
+  --bg-canvas: #e9e4da;
+  --bg-card: #f7f4ee;
+  --bg-elevated: #ddd7cc;
+  --sift-accent: #10b981;
+  --sift-font-size: 14px;
   --text-primary: #18181b;
   --text-secondary: #71717a;
   --text-muted: #a1a1aa;
@@ -39,4 +41,14 @@ body {
   padding: 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  font-size: var(--sift-font-size);
+  background-position: center;
 }
+
+html.theme-ocean { --bg-canvas:#071923; --bg-card:#0d2633; --bg-elevated:#133746; }
+html.theme-forest { --bg-canvas:#0d1b13; --bg-card:#14281d; --bg-elevated:#203b2a; }
+
+input[type="text"], input[type="email"], input[type="password"], input[type="search"], textarea, select { width:100%; border:1px solid color-mix(in srgb,currentColor 15%,transparent); border-radius:.75rem; padding:.7rem .85rem; background:color-mix(in srgb,var(--bg-card) 90%,transparent); color:inherit; outline:none; }
+input[type="text"]:focus, input[type="email"]:focus, input[type="password"]:focus, input[type="search"]:focus, textarea:focus, select:focus { border-color:var(--sift-accent); box-shadow:0 0 0 2px color-mix(in srgb,var(--sift-accent) 25%,transparent); }
+.btn { border-radius:.75rem; padding:.65rem 1rem; background:color-mix(in srgb,currentColor 9%,transparent); font-size:.8rem; font-weight:600; }
+.btn-primary { border-radius:.75rem; padding:.65rem 1rem; background:var(--sift-accent); color:white; font-size:.8rem; font-weight:700; }

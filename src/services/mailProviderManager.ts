@@ -35,6 +35,17 @@ export const PROVIDERS_META: Record<MailProvider, ProviderMeta> = {
     defaultPort: 993,
     authType: 'app_password',
   },
+  yandex: {
+    id: 'yandex',
+    name: 'Yandex Mail',
+    shortName: 'Yandex',
+    tagline: 'Yandex OAuth veya uygulama parolasıyla IMAP/SMTP',
+    badgeClass: 'bg-red-50 text-red-700 border-red-200',
+    accentColor: '#fc3f1d',
+    defaultHost: 'imap.yandex.com',
+    defaultPort: 993,
+    authType: 'oauth',
+  },
   yahoo: {
     id: 'yahoo',
     name: 'Yahoo Mail',
@@ -166,7 +177,7 @@ export function detectMailProvider(rawEmail: string): AutoDiscoveredConfig {
     return {
       email: cleanEmail,
       domain,
-      provider: 'imap',
+      provider: 'yandex',
       providerName: 'Yandex Mail',
       shortName: 'Yandex',
       accentColor: '#fc3f1d',

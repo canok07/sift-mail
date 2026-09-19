@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
-export type AppTheme = 'light' | 'dark' | 'oled';
+export type AppTheme = 'light' | 'dark' | 'oled' | 'ocean' | 'forest';
 export type AppLanguage = 'tr' | 'en' | 'de';
 export type AIProvider = 'gemini' | 'openai' | 'anthropic' | 'ollama';
 
@@ -16,6 +16,11 @@ export interface SettingsState {
   telegramBotToken: string;
   telegramChatId: string;
   telegramEnabled: boolean;
+  accentColor: string;
+  backgroundImage: string;
+  fontFamily: string;
+  fontSize: number;
+  pageSize: 10 | 20 | 50 | 100;
 
   // Actions
   setTheme: (theme: AppTheme) => void;
@@ -26,6 +31,7 @@ export interface SettingsState {
   setAIProvider: (provider: AIProvider) => void;
   setOllamaEndpoint: (endpoint: string) => void;
   setTelegramConfig: (config: { botToken?: string; chatId?: string; enabled?: boolean }) => void;
+  setAppearance: (appearance: Partial<Pick<SettingsState, 'accentColor' | 'backgroundImage' | 'fontFamily' | 'fontSize' | 'pageSize'>>) => void;
   resetToDefaults: () => void;
 }
 
@@ -48,6 +54,11 @@ const DEFAULT_SETTINGS = {
   telegramBotToken: '',
   telegramChatId: '',
   telegramEnabled: false,
+  accentColor: '#10b981',
+  backgroundImage: '',
+  fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
+  fontSize: 14,
+  pageSize: 20 as const,
 };
 
 export const useSettingsStore = create<SettingsState>()(
@@ -68,6 +79,7 @@ export const useSettingsStore = create<SettingsState>()(
           telegramChatId: config.chatId !== undefined ? config.chatId : state.telegramChatId,
           telegramEnabled: config.enabled !== undefined ? config.enabled : state.telegramEnabled,
         })),
+      setAppearance: (appearance) => set(appearance),
       resetToDefaults: () => set(DEFAULT_SETTINGS),
     }),
     {

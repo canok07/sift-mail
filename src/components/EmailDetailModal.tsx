@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   X,
   Mail,
@@ -12,7 +12,7 @@ import {
   Send,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { EmailMessage, SafeCategory, AutoRule } from '../types';
+import { EmailMessage, SafeCategory, AutoRule, UserLabel } from '../types';
 import { CATEGORIES_META, extractDomain } from '../services/categoryManager';
 import { PROVIDERS_META } from '../services/mailProviderManager';
 import { SafeEmailBody } from './SafeEmailBody';
@@ -31,6 +31,8 @@ interface EmailDetailModalProps {
   onUnsubscribeAndPurge?: (email: EmailMessage) => void;
   onOpenAssistant?: (email: EmailMessage) => void;
   theme?: AppTheme;
+  userLabels?: UserLabel[];
+  onToggleLabel?: (emailId:string,labelId:string)=>void;
 }
 
 export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
@@ -46,14 +48,23 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
   onUnsubscribeAndPurge,
   onOpenAssistant,
   theme = 'light',
+  userLabels = [],
+  onToggleLabel,
 }) => {
   const { t, i18n } = useTranslation();
   const [ruleCreated, setRuleCreated] = useState(false);
 
+  useEffect(() => {
+    if (!email) return;
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [email, onClose]);
+
   if (!email) return null;
 
   const isOled = theme === 'oled';
-  const isDark = theme === 'dark' || isOled;
+  const isDark = theme !== 'light';
 
   const analysis = email.analysis;
   const currentCategory: SafeCategory | undefined =
@@ -178,6 +189,7 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
                   </span>
                 )}
               </div>
+              {userLabels.length>0&&<div className="flex flex-wrap gap-1 mt-2">{userLabels.map(label=>{const active=email.labels?.includes(`user:${label.id}`);return <button key={label.id} onClick={()=>onToggleLabel?.(email.id,label.id)} className={`px-2 py-1 rounded-full text-[10px] border ${active?'text-white':'opacity-60'}`} style={{background:active?label.color:'transparent',borderColor:label.color}}>{label.name}</button>})}</div>}
               <h2 className="text-lg font-bold tracking-tight line-clamp-1">
                 {email.subject}
               </h2>
@@ -234,6 +246,7 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
               htmlContent={email.bodyHtml}
               plainText={email.bodyText || email.snippet}
               isOled={isOled}
+              theme={theme}
             />
           </div>
 

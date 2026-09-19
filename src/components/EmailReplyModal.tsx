@@ -22,7 +22,7 @@ interface EmailReplyModalProps {
   accounts: ConnectedAccount[];
   activeAccountId: string;
   initialDraft?: string;
-  sessionCredentials?: { email: string; password?: string; host?: string; port?: number } | null;
+  sessionCredentials?: { email: string; password?: string; accessToken?: string; host?: string; port?: number } | null;
   accessToken?: string | null;
   onSuccess?: (sentEmailId: string) => void;
   onSuccessSent?: (sentEmailId: string) => void;
@@ -79,12 +79,12 @@ export const EmailReplyModal: React.FC<EmailReplyModalProps> = ({
     try {
       // Direct SMTP send using account configuration, session credentials, or standard defaults
       const imapCfg = (activeAccount?.imapConfig || {}) as any;
-      if (!sessionCredentials?.password || sessionCredentials.email !== activeAccount?.email) throw new Error('Gönderen hesaba yeniden giriş yapın.');
+      if ((!sessionCredentials?.password && !sessionCredentials?.accessToken) || sessionCredentials.email !== activeAccount?.email) throw new Error('Gönderen hesaba yeniden giriş yapın.');
       const discovered = detectMailProvider(activeAccount.email);
       const smtpHost = imapCfg.smtpHost || discovered.smtpHost;
       const smtpPort = imapCfg.smtpPort || discovered.smtpPort || 465;
       const userAuth = imapCfg.username || imapCfg.auth?.user || sessionCredentials?.email || activeAccount?.email || '';
-      const passAuth = imapCfg.password || imapCfg.auth?.pass || sessionCredentials?.password || 'VAULT_CREDENTIAL';
+      const passAuth = imapCfg.password || imapCfg.auth?.pass || sessionCredentials?.password;
 
       await safeFetchJson('/api/smtp/send', {
         method: 'POST',
@@ -94,10 +94,7 @@ export const EmailReplyModal: React.FC<EmailReplyModalProps> = ({
             host: smtpHost,
             port: smtpPort,
             secure: smtpPort === 465,
-            auth: {
-              user: userAuth,
-              pass: passAuth,
-            },
+            auth: sessionCredentials?.accessToken ? { user: userAuth, accessToken: sessionCredentials.accessToken } : { user: userAuth, pass: passAuth },
           },
           mail: {
             to: toAddress,

@@ -1,8 +1,9 @@
 import React from 'react';
-import { ShieldCheck, RefreshCw, Settings, Search, X, Users } from 'lucide-react';
+import { RefreshCw, Settings, Search, X, Users, Plus } from 'lucide-react';
 import { ConnectedAccount } from '../types';
-
-export type AppTheme = 'light' | 'dark' | 'oled';
+import { AppTheme } from '../stores/useSettingsStore';
+import { useTranslation } from 'react-i18next';
+export type { AppTheme } from '../stores/useSettingsStore';
 
 interface HeaderProps {
   accounts?: ConnectedAccount[];
@@ -15,6 +16,7 @@ interface HeaderProps {
   isLoading: boolean;
   onOpenSettingsModal: () => void;
   theme?: AppTheme;
+  onCompose?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -27,9 +29,11 @@ export const Header: React.FC<HeaderProps> = ({
   isLoading,
   onOpenSettingsModal,
   theme = 'light',
+  onCompose,
 }) => {
+  const {t}=useTranslation();
   const isOled = theme === 'oled';
-  const isDark = theme === 'dark' || isOled;
+  const isDark = theme !== 'light';
 
   const headerBg = isOled
     ? 'bg-[#000000] text-zinc-100 border-b border-white/10'
@@ -55,10 +59,10 @@ export const Header: React.FC<HeaderProps> = ({
               isDark ? 'bg-zinc-800 text-emerald-400' : 'bg-zinc-900 text-white'
             }`}
           >
-            <ShieldCheck className="w-4 h-4" />
+            <img src="/sift-mail-icon.png" alt="" className="w-7 h-7 rounded-lg" />
           </div>
           <div className="flex items-baseline gap-1.5">
-            <span className="text-base font-black tracking-tight text-zinc-900 dark:text-zinc-100 leading-none">
+            <span className={`text-base font-black tracking-tight leading-none ${isDark?'text-zinc-100':'text-zinc-900'}`}>
               Sift
             </span>
             <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest hidden sm:inline">
@@ -74,7 +78,7 @@ export const Header: React.FC<HeaderProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="E-postalarda ara (gönderen, konu, içerik)..."
+            placeholder={t('actions.searchPlaceholder')}
             className="w-full pl-9 pr-8 py-2 rounded-xl text-xs bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 outline-hidden focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all"
           />
           {searchQuery && (
@@ -89,16 +93,17 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* 3. Hızlı Araçlar: Hesap Seçici, Yenile, Ayarlar */}
         <div className="flex items-center gap-2 shrink-0">
+          <button onClick={onCompose} className="hidden md:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold"><Plus size={15}/>{t('compose.new')}</button>
           {onOpenAccountModal && (
             <button
               onClick={onOpenAccountModal}
-              title="Hesapları Yönet veya Değiştir"
+              title={t('nav.accounts')}
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl transition-colors text-xs font-semibold ${btnBg}`}
             >
               <Users className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
               <span className="hidden sm:inline max-w-[110px] truncate">
                 {activeAccountId === 'all'
-                  ? `Tüm Kutular (${accounts.length})`
+                  ? `${t('nav.allAccounts')} (${accounts.length})`
                   : activeAccount?.displayName?.replace(/\s*\(.*?\)/, '') || activeAccount?.email || 'Hesap'}
               </span>
             </button>
@@ -108,7 +113,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={onRefresh}
             disabled={isLoading}
-            title="Gelen Kutusunu Yenile"
+            title={t('nav.refresh')}
             className={`p-2 rounded-xl transition-colors disabled:opacity-50 ${btnBg}`}
           >
             <RefreshCw
@@ -119,7 +124,7 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Ayarlar İkonu */}
           <button
             onClick={onOpenSettingsModal}
-            title="Ayarlar"
+            title={t('settings.title')}
             className={`p-2 rounded-xl transition-colors ${btnBg}`}
           >
             <Settings className="w-4 h-4" />

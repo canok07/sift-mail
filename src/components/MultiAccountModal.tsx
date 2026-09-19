@@ -35,7 +35,7 @@ interface MultiAccountModalProps {
   onConnect: (credentials: DynamicSyncCredentials) => Promise<void>;
   onRemoveAccount: (accountId: string) => void;
   onLoginGmail?: () => void;
-  theme?: 'light' | 'dark' | 'oled';
+  theme?: 'light' | 'dark' | 'oled' | 'ocean' | 'forest';
 }
 
 export const MultiAccountModal: React.FC<MultiAccountModalProps> = ({
@@ -78,6 +78,17 @@ export const MultiAccountModal: React.FC<MultiAccountModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
+  const startMicrosoftOAuth = async () => {
+    setTestResult(null);
+    try {
+      const data = await safeFetchJson<{authUrl?:string;url?:string}>('/api/oauth/microsoft/auth-url');
+      const url = data.authUrl || data.url;
+      if (!url) throw new Error('Microsoft OAuth adresi alınamadı. MICROSOFT_CLIENT_ID ayarını kontrol edin.');
+      window.open(url, '_blank', 'noopener,noreferrer');
+      setTestResult({success:true,message:'Microsoft giriş sayfası açıldı. Yetkilendirmeyi tarayıcıda tamamlayın.'});
+    } catch (error) { setTestResult({success:false,message:extractErrorMessage(error,'Microsoft OAuth başlatılamadı.')}); }
+  };
+
   // Update server fields when auto-discovery changes
   useEffect(() => {
     if (discovered.imapHost) setHostInput(discovered.imapHost);
@@ -93,10 +104,28 @@ export const MultiAccountModal: React.FC<MultiAccountModalProps> = ({
     }
   }, [discovered]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const receiveOAuth = async (event: MessageEvent) => {
+      if (event.origin !== window.location.origin || event.data?.type !== 'MS_OAUTH_CALLBACK') return;
+      if (event.data.error) { setTestResult({success:false,message:event.data.errorDescription || event.data.error}); return; }
+      setIsSubmitting(true);
+      try {
+        const result = await safeFetchJson<any>('/api/oauth/microsoft/callback', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:event.data.code,state:event.data.state,redirectUri:`${window.location.origin}/oauth/microsoft/callback`})});
+        if (!result.success || !result.accessToken) throw new Error(result.error || 'Microsoft OAuth tamamlanamadı.');
+        await onConnect({email:result.email,password:'',accessToken:result.accessToken,host:'outlook.office365.com',port:993,secure:true});
+        setTestResult({success:true,message:'Microsoft hesabı bağlandı; senkronizasyon arka planda başladı.'});
+      } catch(error) { setTestResult({success:false,message:extractErrorMessage(error,'Microsoft hesabı bağlanamadı.')}); }
+      finally { setIsSubmitting(false); }
+    };
+    window.addEventListener('message', receiveOAuth);
+    return () => window.removeEventListener('message', receiveOAuth);
+  }, [isOpen,onConnect]);
+
   if (!isOpen) return null;
 
   const isOled = theme === 'oled';
-  const isDark = theme === 'dark' || isOled;
+  const isDark = theme !== 'light';
 
   // Standard Direct IMAP/SMTP Login (Auto-discovery for Gmail, Outlook, Yandex, Yahoo, iCloud, Corporate)
   const handleSubmitLogin = async (e: React.FormEvent) => {
@@ -216,6 +245,15 @@ export const MultiAccountModal: React.FC<MultiAccountModalProps> = ({
 
         {/* Scrollable Form Body */}
         <div className="p-5 sm:p-6 overflow-y-auto space-y-5">
+          <div>
+            <p className="text-[10px] uppercase tracking-widest opacity-50 mb-2">Sağlayıcıyla giriş</p>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={onLoginGmail} className="p-3 rounded-xl bg-zinc-500/10 hover:bg-zinc-500/15 text-xs font-bold">Google / Gmail</button>
+              <button type="button" onClick={startMicrosoftOAuth} className="p-3 rounded-xl bg-sky-500/10 hover:bg-sky-500/15 text-xs font-bold text-sky-500">Microsoft / Outlook</button>
+              <button type="button" onClick={()=>{setEmailInput('@yandex.com');setTestResult({success:true,message:'Yandex OAuth yapılandırılmadıysa uygulama parolasıyla güvenli IMAP kurulumu kullanılır.'})}} className="p-3 rounded-xl bg-red-500/10 hover:bg-red-500/15 text-xs font-bold text-red-500">Yandex</button>
+              <button type="button" onClick={()=>{setEmailInput('@icloud.com');setTestResult({success:true,message:'Apple Mail, Apple hesabınızdan oluşturacağınız uygulamaya özel parola ile bağlanır.'})}} className="p-3 rounded-xl bg-zinc-500/10 hover:bg-zinc-500/15 text-xs font-bold">Apple Mail</button>
+            </div>
+          </div>
           {/* Hızlı Oturum Açma / Eşitleme Seçeneği */}
           {onLoginGmail && (
             <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-between gap-3">

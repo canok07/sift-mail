@@ -1,6 +1,6 @@
 {
   "app": {
-    "title": "Sift",
+    "title": "Sift Mail",
     "tagline": "AI-Powered Inbox",
     "geminiNLP": "Gemini NLP",
     "multiProvider": "Multi-Provider",
@@ -16,6 +16,11 @@
   "nav": {
     "safeOnly": "Safe Only",
     "allMessages": "All Messages",
+    "allAccounts": "All accounts",
+    "addAccount": "Add account",
+    "inbox": "Inbox",
+    "sent": "Sent",
+    "spam": "Spam",
     "subscriptions": "Subscriptions",
     "threats": "Spam & Threats",
     "accounts": "Accounts",
@@ -41,6 +46,7 @@
   },
   "actions": {
     "scanAllNLP": "Scan All with NLP",
+    "scanAI": "Scan with AI", "sync": "Sync mail", "syncShort": "Sync", "syncing": "Syncing…", "loading": "Loading…", "loadMore": "Load more", "showMore": "Show more", "emailCount": "{{count}} emails", "loadedCount": "{{loaded}} / {{total}} emails loaded", "loaded": "{{count}} loaded emails",
     "scanning": "Scanning...",
     "searchPlaceholder": "Search sender, subject or body...",
     "selectAll": "Select All",
@@ -104,6 +110,11 @@
     "travel": "Travel & Trips",
     "other": "Other Safe"
   },
+  "compose": {"new":"New","title":"Compose","from":"From","to":"To","subject":"Subject","body":"Message","send":"Send","sending":"Sending…","required":"Recipient, subject and message are required.","loginRequired":"Sign in to the sending account again.","error":"Email could not be sent."},
+  "labels": {"title":"Labels","create":"Create label","name":"Label name","empty":"No labels yet"},
+  "dateGroups": {"today":"Today","week":"This Week","month":"This Month","older":"Older"},
+  "ai": {"assistant":"AI Assistant"},
+  "settings": {"title":"Settings","tabs":{"general":"General","interface":"Interface","ai":"Artificial Intelligence","help":"Help","about":"About"},"general":{"language":"Language","security":"Privacy and security","trackers":"Block tracking pixels","vault":"Encrypted vault","desktop":"Desktop setup"},"interface":{"theme":"Theme","customize":"Customize appearance","themes":{"light":"Soft light","dark":"Dark","oled":"OLED","ocean":"Ocean","forest":"Forest"},"accent":"Accent color","font":"Font","fontSize":"Font size","pageSize":"Emails shown","background":"Background image"},"ai":{"title":"AI providers","description":"Connect Gemini, GPT, Claude or local Ollama. Keys are kept in the server's encrypted vault.","local":"Local","apiKey":"API key","model":"Model name (optional)","test":"Test connection","save":"Save","saving":"Working…","success":"Connection successful.","error":"Connection failed."},"help":{"title":"Help center","askAI":"Ask AI assistant","accounts":{"q":"How do I add an account?","a":"Choose a provider under Add account; use the provider page when OAuth is available, otherwise use IMAP with an app password."},"sync":{"q":"How does sync work?","a":"You enter the app immediately; recent messages load by folder in the background."},"password":{"q":"Is my password stored?","a":"Session credentials stay in memory by default; the encrypted vault is optional."},"ai":{"q":"Can AI send mail?","a":"AI prepares suggestions; sending and deletion still require user approval."}},"about":{"title":"About Sift Mail","description":"A customizable desktop client for Gmail, Outlook, Apple, Yandex and standard IMAP/SMTP accounts.","version":"Version","engine":"Engine","developer":"Owner / developer","hidden":"Hidden for now"}},
   "toast": {
     "markedSafe": "Email marked as safe and archived.",
     "unsubStarted": "Unsubscribe process started.",

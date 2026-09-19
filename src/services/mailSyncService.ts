@@ -5,6 +5,7 @@ import { safeFetchJson } from './apiClient';
 export interface DynamicSyncCredentials {
   email: string;
   password: string; // 16-character Google App Password or IMAP password
+  accessToken?: string;
   host?: string;
   port?: number;
   secure?: boolean;
@@ -61,6 +62,7 @@ export async function syncEmailsFromBackend(
   const payload = {
     email: credentials.email.trim(),
     password: credentials.password,
+    accessToken: credentials.accessToken,
     host: credentials.host?.trim() || undefined,
     port: credentials.port || 993,
     secure: credentials.secure !== false,

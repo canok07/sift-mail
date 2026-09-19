@@ -2,7 +2,7 @@ export type Classification = 'safe' | 'newsletter' | 'spam' | 'phishing';
 export type ThreatLevel = 'none' | 'low' | 'medium' | 'high' | 'critical';
 export type SuggestedAction = 'keep_safe' | 'reply' | 'unsubscribe' | 'trash' | 'block_spam';
 
-export type MailProvider = 'gmail' | 'outlook' | 'yahoo' | 'icloud' | 'imap';
+export type MailProvider = 'gmail' | 'outlook' | 'yandex' | 'yahoo' | 'icloud' | 'imap';
 
 export type FolderType = 'inbox' | 'spam' | 'sent' | 'drafts' | 'trash' | 'archive' | 'other';
 
@@ -105,6 +105,7 @@ export interface EmailMessage {
   from: string;
   fromName?: string;
   fromEmail?: string;
+  to?: string[];
   subject: string;
   date: string;
   snippet: string;
@@ -118,6 +119,12 @@ export interface EmailMessage {
   appliedGmailLabels?: string[];
   analysis?: EmailAnalysis;
   isAnalyzing?: boolean;
+}
+
+export interface UserLabel {
+  id: string;
+  name: string;
+  color: string;
 }
 
 export type FilterTab =
