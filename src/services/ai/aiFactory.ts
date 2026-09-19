@@ -86,25 +86,7 @@ class UnifiedMultiModelAnalyzer implements IEmailAnalyzer {
       const isFinance =
         combined.includes('fatura') || combined.includes('ekstre') || combined.includes('ödeme');
 
-      const fallback: EmailAnalysis = {
-        classification: email.labels?.includes('SPAM') ? 'spam' : 'safe',
-        isSafe: !email.labels?.includes('SPAM'),
-        safetyScore: email.labels?.includes('SPAM') ? 15 : 94,
-        threatLevel: email.labels?.includes('SPAM') ? 'high' : 'none',
-        safeCategory: isShopping ? 'shopping' : isFinance ? 'finance' : 'work',
-        categoryConfidence: 90,
-        isSubscription: Boolean(email.listUnsubscribe),
-        unsubscribeUrl: parseListUnsubscribe(email.listUnsubscribe),
-        reasoning: `Sift ${config.provider.toUpperCase()} motoru ile analiz edildi (${err.message ? 'Yerel destek' : 'Tamamlandı'}).`,
-        keyFindings: ['İleti yapısı doğrulandı', 'Güvenlik filtreleri uygulandı'],
-        suggestedAction: 'keep_safe',
-        orderShippingInfo: isShopping ? extractOrderShippingInfo(combined) : undefined,
-        financeBillingInfo: isFinance ? extractFinanceBillingInfo(combined) : undefined,
-        analyzedAt: new Date().toISOString(),
-      };
-
-      saveOfflineAnalysis(email.id, fallback);
-      return fallback;
+      throw new Error('AI analizi tamamlanamadı. Sağlayıcı bağlantısını ve API anahtarını kontrol edin.');
     }
   }
 }

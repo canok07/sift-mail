@@ -59,10 +59,7 @@ export async function parseResponseSafe<T = any>(response: Response): Promise<T>
   // Common patterns: "The page could not be found", "<!DOCTYPE html>", "<html>", "<html "
   const isHtmlOrTextPage =
     trimmed.startsWith('<') ||
-    trimmed.startsWith('The page') ||
-    trimmed.toLowerCase().includes('<!doctype') ||
-    trimmed.toLowerCase().includes('<html>') ||
-    trimmed.includes('The page could not be found');
+    trimmed.startsWith('The page');
 
   if (isHtmlOrTextPage) {
     const errorMsg = !response.ok

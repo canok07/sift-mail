@@ -136,7 +136,7 @@ export default function App() {
   const [isCategorizing, setIsCategorizing] = useState(false);
   const [isSyncingLabels, setIsSyncingLabels] = useState(false);
   const [scanProgress, setScanProgress] = useState<{ current: number; total: number } | null>(null);
-  const [activeTab, setActiveTab] = useState<FilterTab>('safe_only');
+  const [activeTab, setActiveTab] = useState<FilterTab>('inbox');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedEmailIds, setSelectedEmailIds] = useState<Set<string>>(new Set());
   const [detailEmail, setDetailEmail] = useState<EmailMessage | null>(null);
@@ -285,13 +285,17 @@ export default function App() {
       showToast('IMAP sunucusuna bağlanılıyor ve iletiler çekiliyor...', 'info');
 
       try {
-        const { messages, accountEmail, provider } = await syncEmailsFromBackend({
+        // Generate the ID before syncing so every returned message belongs to
+        // the account that is selected in the sidebar.
+        const accountId = accounts.find(a => a.email.toLowerCase() === credentials.email.trim().toLowerCase())?.id || `acc-${Date.now()}`;
+        const { messages, accountEmail, provider, mailboxes } = await syncEmailsFromBackend({
           email: credentials.email,
           password: credentials.password,
           host: credentials.host,
           port: credentials.port,
           secure: credentials.secure,
-          maxResults: 35,
+          maxResults: 100,
+          accountId,
         });
 
         // Retain credentials in transient component memory for this active session
@@ -299,12 +303,12 @@ export default function App() {
 
         // Automatically apply auto rules to newly fetched emails
         const categorized = applyRulesToEmails(messages, autoRules);
-        setEmails(categorized);
+        setEmails(prev => [...prev.filter(e => e.accountId !== accountId), ...categorized]);
 
         // Update or create connected account representation
-        const accountId = `acc-${provider}-${Date.now()}`;
         const newAccount: ConnectedAccount = {
           id: accountId,
+          mailboxes,
           provider: provider,
           email: accountEmail,
           displayName: accountEmail,
@@ -345,7 +349,7 @@ export default function App() {
         setIsSyncingEmails(false);
       }
     },
-    [showToast, applyRulesToEmails, autoRules]
+    [showToast, applyRulesToEmails, autoRules, accounts]
   );
 
   const handleSyncEmails = useCallback(async () => {
@@ -686,12 +690,6 @@ export default function App() {
 
   // Unsubscribe from email
   const handleUnsubscribe = (email: EmailMessage) => {
-    // If autoDeleteUnsubscribed setting is active, trigger full purge flow
-    if (autoDeleteUnsubscribed) {
-      handleUnsubscribeAndPurge(email);
-      return;
-    }
-
     const unsubUrl = email.analysis?.unsubscribeUrl || email.listUnsubscribe;
     if (!unsubUrl) {
       showToast('Bu e-postada aktif bir abonelikten çıkma bağlantısı tespit edilemedi.', 'error');
@@ -926,7 +924,7 @@ export default function App() {
         else if (email.analysis.classification === 'spam') spam++;
         else if (email.analysis.classification === 'phishing') phishing++;
       } else {
-        if (email.labels?.includes('SPAM')) spam++;
+        if (email.folderType === 'spam' || email.labels?.includes('SPAM')) spam++;
         else if (email.listUnsubscribe) newsletters++;
         else safe++;
       }
@@ -967,6 +965,9 @@ export default function App() {
       }
 
       // Tab filter
+      if (['inbox', 'sent', 'drafts', 'trash', 'archive'].includes(activeTab)) return email.folderType === activeTab;
+      if (activeTab === 'threats') return email.folderType === 'spam';
+      if (activeTab !== 'all' && email.folderType !== 'inbox') return false;
       if (activeTab === 'safe_only') {
         const isSafe =
           (email.analysis && email.analysis.isSafe && email.analysis.classification === 'safe') ||
@@ -990,20 +991,34 @@ export default function App() {
         );
       }
 
-      if (activeTab === 'threats') {
-        return (
-          email.analysis?.classification === 'spam' ||
-          email.analysis?.classification === 'phishing' ||
-          email.labels?.includes('SPAM')
-        );
-      }
-
       return true; // 'all'
-    });
+    }).sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
   }, [emails, activeAccountId, activeTab, searchQuery, selectedCategory]);
 
   const handleSelectAll = () => {
     setSelectedEmailIds(new Set(filteredEmails.map((e) => e.id)));
+  };
+
+  const mailboxType = activeTab === 'threats' ? 'spam' : activeTab;
+  const visibleAccounts = accounts.filter(a => activeAccountId === 'all' || a.id === activeAccountId);
+  const folderTotal = visibleAccounts.reduce((sum, account) => sum + (account.mailboxes || []).filter(m => m.type === mailboxType).reduce((n,m) => n + (m.totalMessages || 0), 0), 0);
+  const folderLoaded = emails.filter(e => visibleAccounts.some(a => a.id === e.accountId) && e.folderType === mailboxType).length;
+  const handleLoadMore = async () => {
+    if (!sessionCredentials) { setIsLoginModalOpen(true); return; }
+    setIsSyncingEmails(true);
+    setSyncError(null);
+    try {
+      for (const account of visibleAccounts) {
+        const mailbox = account.mailboxes?.find(m => m.type === mailboxType);
+        if (!mailbox) continue;
+        const offset = emails.filter(e => e.accountId === account.id && e.folder === mailbox.path).length;
+        if (offset >= (mailbox.totalMessages || 0)) continue;
+        if (account.email !== sessionCredentials.email) throw new Error(`${account.email} hesabına yeniden giriş yapın.`);
+        const result = await syncEmailsFromBackend({...sessionCredentials, accountId: account.id, folder: mailbox.path, offset, maxResults: 100});
+        setEmails(prev => { const ids = new Set(prev.map(e => e.id)); return [...prev, ...result.messages.filter(e => !ids.has(e.id))]; });
+      }
+    } catch (err: any) { setSyncError(err.message); showToast(err.message, 'error'); }
+    finally { setIsSyncingEmails(false); }
   };
 
   const handleDeselectAll = () => {
@@ -1124,7 +1139,7 @@ export default function App() {
 
         {/* Sağ Ana İçerik Alanı: E-posta Listesi & Okuma Alanı */}
         <main className="flex-1 h-[calc(100vh-50px)] overflow-y-auto px-3 sm:px-6 py-4 pb-24 md:pb-6 space-y-4">
-          {emails.length === 0 ? (
+          {accounts.length === 0 ? (
             /* Empty State: Zero dummy data, direct prompt for user credentials */
             <div className="py-6 sm:py-10 max-w-xl mx-auto w-full flex flex-col items-center">
               <DynamicEmailLoginCard
@@ -1137,10 +1152,15 @@ export default function App() {
             </div>
           ) : (
             <>
+              {syncError && <p role="alert" className="text-sm text-rose-500">{syncError}</p>}
+              <div className="flex items-center justify-between text-sm text-zinc-500">
+                <span>{['inbox','sent','threats'].includes(activeTab) ? `${folderLoaded} / ${folderTotal} ileti yüklendi` : `${filteredEmails.length} yüklü ileti`}</span>
+                {folderLoaded < folderTotal && <button disabled={isSyncingEmails} onClick={handleLoadMore} className="px-3 py-2 rounded-lg bg-emerald-500/10 text-emerald-500 disabled:opacity-50">{isSyncingEmails ? 'Yükleniyor…' : 'Daha fazla yükle'}</button>}
+              </div>
               {/* Action Toolbar */}
               <FilterBar
                 selectedCount={selectedEmailIds.size}
-                totalCount={emails.length}
+                totalCount={filteredEmails.length}
                 isScanning={isScanning}
                 onScanAll={handleScanAll}
                 onBatchTrash={handleBatchTrash}
@@ -1357,7 +1377,7 @@ export default function App() {
         isOpen={isMultiAccountModalOpen}
         onClose={() => setIsMultiAccountModalOpen(false)}
         accounts={accounts}
-        onAddAccount={handleAddAccount}
+        onConnect={handleLoginAndSync}
         onRemoveAccount={handleRemoveAccount}
         onSelectAccount={(accId) => {
           setActiveAccountId(accId);

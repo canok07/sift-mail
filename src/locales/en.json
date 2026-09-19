@@ -95,6 +95,7 @@
     "tabRaw": "Raw Headers"
   },
   "categories": {
+    "all": "All Categories",
     "work": "Work & Projects",
     "finance": "Finance & Bills",
     "shopping": "Orders & Shipping",

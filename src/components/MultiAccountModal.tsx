@@ -23,6 +23,7 @@ import {
   detectMailProvider,
   AutoDiscoveredConfig,
 } from '../services/mailProviderManager';
+import { DynamicSyncCredentials } from '../services/mailSyncService';
 import { safeFetchJson, extractErrorMessage } from '../services/apiClient';
 
 interface MultiAccountModalProps {
@@ -31,9 +32,7 @@ interface MultiAccountModalProps {
   accounts: ConnectedAccount[];
   activeAccountId: string | 'all';
   onSelectAccount: (accountId: string | 'all') => void;
-  onAddAccount: (
-    account: Omit<ConnectedAccount, 'id' | 'lastSyncAt' | 'totalCount' | 'unreadCount'>
-  ) => void;
+  onConnect: (credentials: DynamicSyncCredentials) => Promise<void>;
   onRemoveAccount: (accountId: string) => void;
   onLoginGmail?: () => void;
   theme?: 'light' | 'dark' | 'oled';
@@ -45,7 +44,7 @@ export const MultiAccountModal: React.FC<MultiAccountModalProps> = ({
   accounts = [],
   activeAccountId = 'all',
   onSelectAccount,
-  onAddAccount,
+  onConnect,
   onRemoveAccount,
   onLoginGmail,
   theme = 'light',
@@ -70,7 +69,7 @@ export const MultiAccountModal: React.FC<MultiAccountModalProps> = ({
 
   // Corporate IMAP expansion toggle
   const [showCorporateImap, setShowCorporateImap] = useState(false);
-  const [saveToVault, setSaveToVault] = useState(true);
+  const [saveToVault, setSaveToVault] = useState(false);
 
   // Show connected accounts drawer / section
   const [showConnectedList, setShowConnectedList] = useState(false);
@@ -127,37 +126,7 @@ export const MultiAccountModal: React.FC<MultiAccountModalProps> = ({
     setTestResult(null);
 
     try {
-      // Test IMAP connection via backend route
-      const data = await safeFetchJson<any>('/api/imap/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          host: finalHost,
-          port: finalPort,
-          secure: secureSsl,
-          auth: {
-            user: email,
-            pass: passwordInput.trim(),
-          },
-        }),
-      });
-
-      if (!data.success) {
-        console.error("Auth error details:", data);
-        const errorMessage =
-          typeof data.message === 'string'
-            ? data.message
-            : typeof data.error === 'string'
-            ? data.error
-            : (data as any)?.message || (data as any)?.error || JSON.stringify(data);
-        setTestResult({
-          success: false,
-          message: errorMessage,
-        });
-        setShowCorporateImap(true);
-        setIsSubmitting(false);
-        return;
-      }
+      await onConnect({ email, password: passwordInput, host: finalHost, port: finalPort, secure: secureSsl });
 
       setTestResult({
         success: true,
@@ -181,23 +150,6 @@ export const MultiAccountModal: React.FC<MultiAccountModalProps> = ({
           console.warn('Kasaya kaydedilirken uyarı:', vaultErr);
         }
       }
-
-      // Add account to state
-      onAddAccount({
-        provider: discovered.provider,
-        email: email,
-        displayName:
-          displayNameInput.trim() ||
-          `${discovered.providerName} (${email.split('@')[0]})`,
-        status: 'connected',
-        isPrimary: accounts.length === 0,
-        imapConfig: {
-          host: finalHost,
-          port: finalPort,
-          secure: secureSsl,
-          username: email,
-        },
-      });
 
       // Reset and close
       setTimeout(() => {

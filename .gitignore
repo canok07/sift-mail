@@ -1,4 +1,9 @@
 node_modules/
+release/
+data/
+.npm-cache/
+.test-data/
+test-results/
 build/
 dist/
 coverage/

@@ -1,8 +1,18 @@
 export type Classification = 'safe' | 'newsletter' | 'spam' | 'phishing';
 export type ThreatLevel = 'none' | 'low' | 'medium' | 'high' | 'critical';
-export type SuggestedAction = 'keep_safe' | 'unsubscribe' | 'trash' | 'block_spam';
+export type SuggestedAction = 'keep_safe' | 'reply' | 'unsubscribe' | 'trash' | 'block_spam';
 
 export type MailProvider = 'gmail' | 'outlook' | 'yahoo' | 'icloud' | 'imap';
+
+export type FolderType = 'inbox' | 'spam' | 'sent' | 'drafts' | 'trash' | 'archive' | 'other';
+
+export interface MailboxFolder {
+  path: string;
+  name: string;
+  type: FolderType;
+  totalMessages?: number;
+  unreadMessages?: number;
+}
 
 export interface OrderShippingInfo {
   trackingNumber?: string;
@@ -25,6 +35,7 @@ export interface ConnectedAccount {
   lastSyncAt?: string;
   totalCount?: number;
   unreadCount?: number;
+  mailboxes?: MailboxFolder[];
   imapConfig?: {
     host: string;
     port: number;
@@ -56,6 +67,10 @@ export interface AutoRule {
 }
 
 export interface EmailAnalysis {
+  summary?: string;
+  category?: string;
+  priority?: 'low' | 'medium' | 'high' | 'urgent';
+  phishingRisk?: 'safe' | 'suspicious' | 'dangerous';
   classification: Classification;
   isSafe: boolean;
   safetyScore: number; // 0 to 100
@@ -67,6 +82,7 @@ export interface EmailAnalysis {
   reasoning: string;
   keyFindings: string[];
   suggestedAction: SuggestedAction;
+  draftReply?: string;
   suggestedFilterRule?: {
     patternType: 'from' | 'subject' | 'domain';
     patternValue: string;
@@ -80,8 +96,12 @@ export interface EmailAnalysis {
 export interface EmailMessage {
   id: string;
   threadId?: string;
+  messageId?: string;
+  uid?: number;
   accountId?: string;
   provider?: MailProvider;
+  folder?: string;
+  folderType?: FolderType;
   from: string;
   fromName?: string;
   fromEmail?: string;
@@ -100,7 +120,16 @@ export interface EmailMessage {
   isAnalyzing?: boolean;
 }
 
-export type FilterTab = 'all' | 'safe_only' | 'subscriptions' | 'threats';
+export type FilterTab =
+  | 'all'
+  | 'safe_only'
+  | 'subscriptions'
+  | 'threats'
+  | 'inbox'
+  | 'sent'
+  | 'drafts'
+  | 'trash'
+  | 'archive';
 
 export interface ScanStats {
   total: number;
@@ -108,6 +137,7 @@ export interface ScanStats {
   newsletters: number;
   spam: number;
   phishing: number;
+  folderCounts?: Record<FolderType, number>;
   categoryCounts: Record<SafeCategory, number>;
   unsubscribedCount: number;
   trashedCount: number;
@@ -135,7 +165,7 @@ export interface VaultEntry {
 
 export interface VaultSummary {
   isConfigured: boolean;
-  algorithm: 'AES-256-CBC';
+  algorithm: 'AES-256-GCM';
   totalKeys: number;
   storagePath: string;
   lastUpdated: string;

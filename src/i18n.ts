@@ -19,6 +19,8 @@ i18n
     resources,
     fallbackLng: 'tr',
     supportedLngs: ['tr', 'en', 'de'],
+    load: 'languageOnly',
+    nonExplicitSupportedLngs: true,
     interpolation: {
       escapeValue: false, // React already escapes values
     },

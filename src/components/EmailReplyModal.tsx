@@ -13,6 +13,7 @@ import {
 import { EmailMessage, ConnectedAccount } from '../types';
 import { AppTheme } from './Header';
 import { safeFetchJson, extractErrorMessage } from '../services/apiClient';
+import { detectMailProvider } from '../services/mailProviderManager';
 
 interface EmailReplyModalProps {
   isOpen: boolean;
@@ -78,8 +79,10 @@ export const EmailReplyModal: React.FC<EmailReplyModalProps> = ({
     try {
       // Direct SMTP send using account configuration, session credentials, or standard defaults
       const imapCfg = (activeAccount?.imapConfig || {}) as any;
-      const smtpHost = imapCfg.smtpHost || sessionCredentials?.host || (activeAccount?.provider === 'gmail' ? 'smtp.gmail.com' : activeAccount?.provider === 'outlook' ? 'smtp.office365.com' : imapCfg.host || 'localhost');
-      const smtpPort = imapCfg.smtpPort || (sessionCredentials?.port === 993 ? 465 : sessionCredentials?.port) || 465;
+      if (!sessionCredentials?.password || sessionCredentials.email !== activeAccount?.email) throw new Error('Gönderen hesaba yeniden giriş yapın.');
+      const discovered = detectMailProvider(activeAccount.email);
+      const smtpHost = imapCfg.smtpHost || discovered.smtpHost;
+      const smtpPort = imapCfg.smtpPort || discovered.smtpPort || 465;
       const userAuth = imapCfg.username || imapCfg.auth?.user || sessionCredentials?.email || activeAccount?.email || '';
       const passAuth = imapCfg.password || imapCfg.auth?.pass || sessionCredentials?.password || 'VAULT_CREDENTIAL';
 
@@ -90,7 +93,7 @@ export const EmailReplyModal: React.FC<EmailReplyModalProps> = ({
           config: {
             host: smtpHost,
             port: smtpPort,
-            secure: true,
+            secure: smtpPort === 465,
             auth: {
               user: userAuth,
               pass: passAuth,

@@ -81,7 +81,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
         }),
       });
 
-      setSuccessMsg('Veri AES-256-CBC ile yerel diske şifrelenerek kaydedildi.');
+      setSuccessMsg('Veri AES-256-GCM ile yerel diske şifrelenerek kaydedildi.');
       setKey('');
       setLabel('');
       setSecretValue('');
@@ -127,7 +127,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
               <h2 className="text-base font-bold flex items-center gap-2">
                 Yerel Güvenli Kasa (Local Vault)
                 <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-500/30 text-emerald-300 border border-emerald-500/40">
-                  AES-256-CBC
+                  AES-256-GCM
                 </span>
               </h2>
               <p className="text-xs text-zinc-400">
@@ -320,7 +320,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
 
         {/* Footer */}
         <div className="px-6 py-3 border-t border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 flex items-center justify-between text-[11px] opacity-70">
-          <span>Depolama: Yerel Disk (AES-256-CBC)</span>
+          <span>Depolama: Yerel Disk (AES-256-GCM)</span>
           <button
             onClick={onClose}
             className="px-3 py-1.5 rounded-lg border border-black/15 dark:border-white/15 font-semibold hover:bg-black/5 dark:hover:bg-white/10 transition-colors"

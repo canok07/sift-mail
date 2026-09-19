@@ -72,10 +72,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [chatIdInput, setChatIdInput] = useState(telegramChatId);
   const [telegramSaved, setTelegramSaved] = useState(false);
 
-  // Telegram simulator state
-  const [simCommand, setSimCommand] = useState('Son 3 saatteki spam mailleri temizle');
-  const [simResponse, setSimResponse] = useState<string | null>(null);
-  const [simLoading, setSimLoading] = useState(false);
+  const [aiApiKey, setAiApiKey] = useState('');
+  const [aiModel, setAiModel] = useState('');
+  const [aiEndpoint, setAiEndpoint] = useState(ollamaEndpoint);
+  const [aiStatus, setAiStatus] = useState<string | null>(null);
+  const [aiSaving, setAiSaving] = useState(false);
 
   if (!isOpen) return null;
 
@@ -107,22 +108,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  const handleRunSimCommand = async () => {
-    if (!simCommand.trim()) return;
-    setSimLoading(true);
-    setSimResponse(null);
+  const handleSaveAiProvider = async (testOnly = false) => {
+    setAiSaving(true);
+    setAiStatus(null);
     try {
-      const data = await safeFetchJson<any>('/api/telegram/simulate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command: simCommand }),
+      const payload = {
+        provider: aiProvider,
+        apiKey: aiApiKey || undefined,
+        model: aiModel || undefined,
+        endpoint: aiProvider === 'ollama' ? aiEndpoint : undefined,
+        enabled: true,
+        isDefault: true,
+      };
+      const endpoint = testOnly ? '/api/ai/test-connection' : '/api/ai/save-config';
+      const data = await safeFetchJson<any>(endpoint, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       });
-      setSimResponse(data.reply || data.message || 'Komut işlendi.');
-    } catch {
-      setSimResponse('Simülasyon yanıtı alınırken bir hata oluştu.');
-    } finally {
-      setSimLoading(false);
-    }
+      if (!testOnly && aiProvider === 'ollama' && aiEndpoint) setOllamaEndpoint(aiEndpoint);
+      setAiStatus(data.message || (testOnly ? 'Bağlantı başarılı.' : 'Ayarlar güvenli kasaya kaydedildi.'));
+      if (!testOnly) setAiApiKey('');
+    } catch (err: any) {
+      setAiStatus(err?.message || 'AI sağlayıcısına bağlanılamadı.');
+    } finally { setAiSaving(false); }
   };
 
   // iOS-style Toggle Component
@@ -367,7 +374,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                     <div>
                       <h4 className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
-                        Yerel Şifreli Kasa (AES-256-CBC)
+                        Yerel Şifreli Kasa (AES-256-GCM)
                       </h4>
                       <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
                         IMAP şifreleri, oturum tokenleri ve hassas kimlik bilgilerinizi şifreli yerel kasada güvenle yönetin.
@@ -396,7 +403,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       Yerel Şifreleme Garantisi
                     </p>
                     <p className="text-zinc-500 dark:text-zinc-400 mt-1 leading-relaxed">
-                      Tüm e-posta verileriniz, oturum anahtarlarınız ve analiz kayıtlarınız cihazınızda AES-256-CBC standardıyla şifrelenir. Harici hiçbir üçüncü parti sunucuya veri aktarılmaz.
+                       Tüm e-posta verileriniz, oturum anahtarlarınız ve analiz kayıtlarınız cihazınızda AES-256-GCM standardıyla şifrelenir. Harici hiçbir üçüncü parti sunucuya veri aktarılmaz.
                     </p>
                   </div>
                 </div>
@@ -407,23 +414,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* TAB 3: OTOMASYON (AUTOMATION & TELEGRAM) */}
           {activeTab === 'automation' && (
             <div className="space-y-6 animate-fade-in">
-              <ToggleSwitch
-                checked={autoDeleteUnsubscribed}
-                onChange={setAutoDeleteUnsubscribed}
-                label="Abonelikten Çıkınca Geçmişi Temizle"
-                description="Bir bültenden çıkıldığında, ilgili göndericiye ait geçmiş tüm eski tanıtım e-postalarını doğrudan çöp kutusuna taşır."
-              />
+
 
               {/* Telegram Bot Section */}
-              <div className="pt-4 border-t border-black/5 dark:border-white/5 space-y-4">
-                <div className="flex items-center justify-between">
+              <details className="pt-4 border-t border-black/5 dark:border-white/5 space-y-4">
+                <summary className="cursor-pointer flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <div className="w-8 h-8 rounded-xl bg-sky-500/15 text-sky-400 flex items-center justify-center">
                       <Bot className="w-4 h-4" />
                     </div>
                     <div>
                       <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-200">
-                        Telegram Bot Asistanı (Telegraf)
+                        Telegram bağla (isteğe bağlı)
                       </h4>
                       <p className="text-xs text-zinc-500 dark:text-zinc-400">
                         Yoldayken Telegram üzerinden sesli veya yazılı komutlarla gelen kutunuzu yönetin.
@@ -435,7 +437,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       Aktif 🟢
                     </span>
                   )}
-                </div>
+                </summary>
 
                 <div className="space-y-3">
                   <div>
@@ -475,35 +477,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </button>
                 </div>
 
-                {/* NLP Command Simulator */}
-                <div className="p-4 rounded-2xl bg-black/[0.03] dark:bg-white/[0.03] space-y-3 mt-4">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-sky-400 block">
-                    Doğal Dil Komut Testi (NLP Simülatörü)
-                  </span>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={simCommand}
-                      onChange={(e) => setSimCommand(e.target.value)}
-                      placeholder="Örn: Son 3 saatteki spam mailleri temizle"
-                      className="flex-1 px-3 py-2 rounded-xl bg-black/5 dark:bg-white/5 border-0 text-xs outline-hidden"
-                    />
-                    <button
-                      onClick={handleRunSimCommand}
-                      disabled={simLoading}
-                      className="px-4 py-2 rounded-xl text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white transition-colors shrink-0"
-                    >
-                      {simLoading ? 'Çözümleniyor...' : 'Test Et'}
-                    </button>
-                  </div>
-
-                  {simResponse && (
-                    <div className="p-3 rounded-xl bg-black/5 dark:bg-white/5 text-xs whitespace-pre-line leading-relaxed text-zinc-300">
-                      {simResponse}
-                    </div>
-                  )}
-                </div>
-              </div>
+              </details>
             </div>
           )}
 
@@ -536,6 +510,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1.5 leading-relaxed">
                   Tüm e-posta sınıflandırmaları, kargo takip ayrıştırmaları ve fatura tespitleri seçilen bu model fabrikası üzerinden çalışır.
                 </p>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-black/[0.03] dark:bg-white/[0.03] space-y-3">
+                <div className="flex items-center gap-2"><Bot className="w-4 h-4 text-emerald-400" /><span className="text-xs font-bold">Sağlayıcı bağlantısı</span></div>
+                <p className="text-[11px] text-zinc-500 dark:text-zinc-400">Anahtar yalnızca yerel şifreli kasaya kaydedilir; yeniden gösterilmez.</p>
+                {aiProvider !== 'ollama' && <input type="password" value={aiApiKey} onChange={(e) => setAiApiKey(e.target.value)} placeholder={`${aiProvider.toUpperCase()} API anahtarı`} className="w-full px-3.5 py-2.5 rounded-xl bg-black/5 dark:bg-white/5 border-0 text-xs font-mono outline-hidden" />}
+                <input type="text" value={aiModel} onChange={(e) => setAiModel(e.target.value)} placeholder="İsteğe bağlı model adı (ör. gemini-2.5-flash)" className="w-full px-3.5 py-2.5 rounded-xl bg-black/5 dark:bg-white/5 border-0 text-xs font-mono outline-hidden" />
+                {aiProvider === 'ollama' && <input type="text" value={aiEndpoint} onChange={(e) => setAiEndpoint(e.target.value)} placeholder="http://localhost:11434" className="w-full px-3.5 py-2.5 rounded-xl bg-black/5 dark:bg-white/5 border-0 text-xs font-mono outline-hidden" />}
+                <div className="flex gap-2"><button disabled={aiSaving} onClick={() => handleSaveAiProvider(true)} className="px-3 py-2 rounded-xl text-xs font-semibold bg-black/10 dark:bg-white/10 disabled:opacity-50">Bağlantıyı Test Et</button><button disabled={aiSaving} onClick={() => handleSaveAiProvider(false)} className="px-3 py-2 rounded-xl text-xs font-semibold bg-emerald-600 text-white disabled:opacity-50">Kaydet</button></div>
+                {aiStatus && <p className="text-[11px] text-zinc-500 dark:text-zinc-300">{aiStatus}</p>}
               </div>
 
               {/* Ollama Endpoint Input if selected */}

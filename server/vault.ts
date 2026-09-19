@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
-const DATA_DIR = path.join(process.cwd(), 'data');
+const DATA_DIR = process.env.SIFT_DATA_DIR || path.join(process.cwd(), 'data');
 const VAULT_FILE = path.join(DATA_DIR, 'vault.enc');
 const SALT_FILE = path.join(DATA_DIR, '.vault_salt');
 const KEY_FILE = path.join(DATA_DIR, '.vault_key');

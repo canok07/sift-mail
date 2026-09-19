@@ -3,7 +3,6 @@ import path from "path";
 import dotenv from "dotenv";
 import cors from "cors";
 import { GoogleGenAI, Type } from "@google/genai";
-import { createServer as createViteServer } from "vite";
 import {
   saveVaultSecret,
   getVaultSecret,
@@ -17,7 +16,16 @@ import {
   testSmtpConnection,
   sendSmtpMessage,
 } from "./server/imap";
-import { analyzeWithMultiModel } from "./server/ai/multiModelService";
+import {
+  analyzeWithMultiModel,
+  testAiProviderConnection,
+  getAiProvidersStatus,
+} from "./server/ai/multiModelService";
+import {
+  generateMicrosoftAuthUrl,
+  exchangeMicrosoftCode,
+  refreshMicrosoftToken,
+} from "./server/oauth/microsoft";
 import {
   setupTelegramBot,
   getTelegramStatus,
@@ -38,6 +46,11 @@ import {
   EmailSyncSchema,
   SmtpConnectSchema,
   SmtpSendSchema,
+  MicrosoftAuthUrlSchema,
+  MicrosoftCallbackSchema,
+  MicrosoftRefreshSchema,
+  AiTestConnectionSchema,
+  AiSaveConfigSchema,
   AnalyzeEmailSchema,
   AnalyzeBatchSchema,
   AiAnalyzeSchema,
@@ -49,7 +62,7 @@ import {
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
 
 // ==========================================
 // Strict & Explicit CORS Configuration
@@ -200,12 +213,10 @@ app.post("/api/imap/fetch", sensitiveApiLimiter, requireApiToken, validateBody(I
 // Central Direct IMAP Mail Synchronization Endpoint (Dynamic In-Memory)
 // ==========================================
 // 1. Dinamik İstek Verisi: İstemciden gelen req.body.email ve req.body.password kullanılır.
-// 2. Fallback: .env içinde IMAP_USER / IMAP_PASSWORD yoksa dinamik veriler baz alınır.
-// 3. Hata Yönetimi: 500 çökmesi yerine istemciye anlamlı JSON hata mesajı döner.
+// 2. OAuth2 Desteği: req.body.accessToken (XOAUTH2) ile Outlook ve Gmail OAuth desteklenir.
+// 3. Çoklu Klasör Desteği: req.body.folder veya tüm klasörlerin otomatik senkronizasyonu.
 const handleEmailSync = async (req: express.Request, res: express.Response) => {
   try {
-    // 1. İstemciden gelen dinamik kullanıcı kimlik bilgileri (POST body veya query)
-    // Eğer .env tanımlı değilse doğrudan gelen değerleri kullanır, sabit .env'ye mecbur bırakmaz.
     const user = (
       req.body?.email ||
       req.body?.user ||
@@ -227,13 +238,20 @@ const handleEmailSync = async (req: express.Request, res: express.Response) => {
       process.env.IMAP_PASSWORD ||
       process.env.EMAIL_PASS ||
       ""
-    ).toString().trim().replace(/\s+/g, ""); // Boşlukları ayıkla
+    ).toString();
 
-    if (!user || !pass) {
+    const accessToken = (
+      req.body?.accessToken ||
+      req.body?.auth?.accessToken ||
+      req.query?.accessToken ||
+      ""
+    ).toString().trim();
+
+    if (!user || (!pass && !accessToken)) {
       return res.status(200).json({
         success: false,
-        error: "IMAP kimlik doğrulaması başarısız. Lütfen e-posta adresinizi ve 16 haneli uygulama şifrenizi kontrol edin.",
-        hint: "Google hesabı kullanıyorsanız 2 Adımlı Doğrulama ve 16 haneli Uygulama Şifresi (App Password) oluşturduğunuzdan emin olun.",
+        error: "IMAP kimlik doğrulaması başarısız. Lütfen e-posta adresinizi ve şifrenizi (veya OAuth oturumunu) kontrol edin.",
+        hint: "Outlook/Hotmail için 'Microsoft ile Giriş Yap' butonunu; Google için 16 haneli Uygulama Şifresini kullanın.",
       });
     }
 
@@ -249,7 +267,12 @@ const handleEmailSync = async (req: express.Request, res: express.Response) => {
       const lowerUser = user.toLowerCase();
       if (lowerUser.includes("@gmail.com") || lowerUser.includes("@googlemail.com")) {
         host = "imap.gmail.com";
-      } else if (lowerUser.includes("outlook") || lowerUser.includes("hotmail") || lowerUser.includes("live.com")) {
+      } else if (
+        lowerUser.includes("outlook") ||
+        lowerUser.includes("hotmail") ||
+        lowerUser.includes("live.com") ||
+        lowerUser.includes("msn.com")
+      ) {
         host = "outlook.office365.com";
       } else if (lowerUser.includes("yahoo.com")) {
         host = "imap.mail.yahoo.com";
@@ -269,7 +292,10 @@ const handleEmailSync = async (req: express.Request, res: express.Response) => {
       Math.max(1, Number(req.body?.maxResults || req.query?.maxResults) || 35)
     );
 
-    console.log(`[Dynamic IMAP Sync] ${user} için ${host}:${port} üzerinden ${maxResults} adet ileti senkronize ediliyor...`);
+    const folder = req.body?.folder ? String(req.body.folder).trim() : undefined;
+    const accountId = req.body?.accountId ? String(req.body.accountId).trim() : undefined;
+
+    console.log(`[Dynamic IMAP Sync] ${user} için ${host}:${port} (${folder || 'Tüm Klasörler'}) senkronize ediliyor...`);
 
     // 3. IMAP Bağlantısı ve İleti Çekimi
     const result = await fetchImapMessages(
@@ -277,7 +303,10 @@ const handleEmailSync = async (req: express.Request, res: express.Response) => {
         host,
         port,
         secure,
-        auth: { user, pass },
+        auth: { user, pass: host === 'imap.gmail.com' ? pass.replace(/\s+/g, '') : pass, accessToken },
+        folder,
+        offset: Math.max(0, Math.floor(Number(req.body?.offset) || 0)),
+        accountId,
       },
       maxResults
     );
@@ -286,15 +315,15 @@ const handleEmailSync = async (req: express.Request, res: express.Response) => {
       console.warn(`[IMAP Sync Failed] ${user}: ${result.error}`);
       return res.status(200).json({
         success: false,
-        error: result.error || "IMAP kimlik doğrulaması başarısız. Lütfen 16 haneli uygulama şifrenizi kontrol edin.",
-        hint: "Google hesabı kullanıyorsanız 2 Adımlı Doğrulama ve 16 haneli Uygulama Şifresi (App Password) oluşturduğunuzdan emin olun.",
+        error: result.error || "IMAP kimlik doğrulaması başarısız. Lütfen bilgilerinizi kontrol edin.",
+        hint: "Outlook için 'Microsoft ile Giriş Yap', Gmail için 16 haneli Uygulama Şifresi kullanın.",
       });
     }
 
     const lowerUser = user.toLowerCase();
     const provider = lowerUser.includes("@gmail.com") || lowerUser.includes("@googlemail.com")
       ? "gmail"
-      : lowerUser.includes("outlook") || lowerUser.includes("hotmail")
+      : lowerUser.includes("outlook") || lowerUser.includes("hotmail") || lowerUser.includes("live.com") || lowerUser.includes("msn.com")
       ? "outlook"
       : lowerUser.includes("yahoo")
       ? "yahoo"
@@ -306,6 +335,7 @@ const handleEmailSync = async (req: express.Request, res: express.Response) => {
       success: true,
       count: result.messages.length,
       messages: result.messages,
+      mailboxes: result.mailboxes || [],
       account: {
         email: user,
         provider,
@@ -315,16 +345,165 @@ const handleEmailSync = async (req: express.Request, res: express.Response) => {
     });
   } catch (err: any) {
     console.error("[IMAP Sync Error Catch]", err);
-    // Sunucu 500 çökmesi yerine istemciye anlamlı JSON hata mesajı döner
     return res.status(200).json({
       success: false,
-      error: formatImapError(err) || "IMAP kimlik doğrulaması başarısız. Lütfen 16 haneli uygulama şifrenizi kontrol edin.",
+      error: formatImapError(err) || "IMAP senkronizasyonu sırasında beklenmeyen hata oluştu.",
     });
   }
 };
 
 app.get("/api/emails/sync", sensitiveApiLimiter, requireApiToken, handleEmailSync);
 app.post("/api/emails/sync", sensitiveApiLimiter, requireApiToken, validateBody(EmailSyncSchema), handleEmailSync);
+
+// ==========================================
+// Microsoft Identity Platform OAuth 2.0 / PKCE Routes
+// ==========================================
+
+app.get("/api/oauth/microsoft/auth-url", sensitiveApiLimiter, requireApiToken, (req, res) => {
+  try {
+    const redirectUri =
+      (req.query.redirectUri as string) || `http://localhost:${PORT}/oauth/microsoft/callback`;
+    const customClientId = req.query.customClientId as string;
+    const authData = generateMicrosoftAuthUrl(redirectUri, customClientId);
+    res.json({ success: true, ...authData });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post(
+  "/api/oauth/microsoft/callback",
+  sensitiveApiLimiter,
+  requireApiToken,
+  validateBody(MicrosoftCallbackSchema),
+  async (req, res) => {
+    try {
+      const { code, state, redirectUri, codeVerifier, customClientId } = req.body;
+      const tokenResult = await exchangeMicrosoftCode({
+        code,
+        state,
+        redirectUri,
+        codeVerifier,
+        customClientId,
+      });
+      res.json(tokenResult);
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+);
+
+app.post(
+  "/api/oauth/microsoft/refresh",
+  sensitiveApiLimiter,
+  requireApiToken,
+  validateBody(MicrosoftRefreshSchema),
+  async (req, res) => {
+    try {
+      const { email, customClientId } = req.body;
+      const refreshResult = await refreshMicrosoftToken(email, customClientId);
+      res.json(refreshResult);
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+);
+
+// HTML Callback Handler for Microsoft OAuth Popup
+app.get("/oauth/microsoft/callback", (req, res) => {
+  const code = req.query.code || "";
+  const state = req.query.state || "";
+  const error = req.query.error || "";
+  const errorDescription = req.query.error_description || "";
+
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.send(`<!DOCTYPE html>
+<html>
+<head>
+  <title>Microsoft Girişi Tamamlandı</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #0f172a; color: #f8fafc; text-align: center; }
+    .box { background: #1e293b; padding: 2.5rem; border-radius: 1.5rem; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); max-width: 420px; }
+    h2 { font-size: 1.25rem; margin-bottom: 0.5rem; }
+    p { font-size: 0.875rem; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h2>Microsoft Hesabı Doğrulandı</h2>
+    <p>Oturum açma bilgileri güvenle Sift istemcisine aktarılıyor, pencere otomatik kapanacaktır...</p>
+  </div>
+  <script>
+    const payload = {
+      type: 'MS_OAUTH_CALLBACK',
+      code: ${JSON.stringify(code)},
+      state: ${JSON.stringify(state)},
+      error: ${JSON.stringify(error)},
+      errorDescription: ${JSON.stringify(errorDescription)}
+    };
+    if (window.opener) {
+      window.opener.postMessage(payload, window.location.origin);
+      setTimeout(() => window.close(), 1000);
+    } else {
+      window.close();
+    }
+  </script>
+</body>
+</html>`);
+});
+
+// ==========================================
+// AI Provider Configuration & Health Routes
+// ==========================================
+
+app.post(
+  "/api/ai/test-connection",
+  sensitiveApiLimiter,
+  requireApiToken,
+  validateBody(AiTestConnectionSchema),
+  async (req, res) => {
+    try {
+      const result = await testAiProviderConnection(req.body);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  }
+);
+
+app.get("/api/ai/providers-status", sensitiveApiLimiter, requireApiToken, (req, res) => {
+  try {
+    const status = getAiProvidersStatus();
+    res.json({ success: true, providers: status });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post(
+  "/api/ai/save-config",
+  sensitiveApiLimiter,
+  requireApiToken,
+  validateBody(AiSaveConfigSchema),
+  (req, res) => {
+    try {
+      const { provider, apiKey, endpoint, model } = req.body;
+      if (apiKey) {
+        const vaultKey = provider === "gemini" ? "gemini_custom_api_key" : `${provider}_api_key`;
+        saveVaultSecret(vaultKey, apiKey, "custom_token", `${provider.toUpperCase()} API Key`);
+      }
+      if (endpoint) {
+        saveVaultSecret(`${provider}_endpoint`, endpoint, "custom_token", `${provider.toUpperCase()} Endpoint`);
+      }
+      if (model) {
+        saveVaultSecret(`${provider}_model`, model, "custom_token", `${provider.toUpperCase()} Model`);
+      }
+      res.json({ success: true, message: `${provider.toUpperCase()} ayarları AES-256-GCM ile kasaya kaydedildi.` });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+);
 
 app.post("/api/smtp/test", sensitiveApiLimiter, requireApiToken, validateBody(SmtpConnectSchema), async (req, res) => {
   try {
@@ -826,6 +1005,9 @@ app.all("/api/*", (req, res) => {
 
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
+    // Vite is a development-only dependency and is intentionally absent from
+    // the packaged Electron application. Load it only for local development.
+    const { createServer: createViteServer } = await import("vite");
     const isHmrDisabled = process.env.DISABLE_HMR === "true" || process.env.DISABLE_HMR === "1";
     const vite = await createViteServer({
       server: {
@@ -836,7 +1018,7 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
+    const distPath = process.env.SIFT_DIST_PATH || path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
@@ -853,10 +1035,22 @@ async function startServer() {
   );
   const BIND_HOST = process.env.HOST || (isContainerEnv || process.env.ENABLE_LAN_ACCESS === "true" ? "0.0.0.0" : "127.0.0.1");
 
-  app.listen(PORT, BIND_HOST, () => {
+  const listener = app.listen(PORT, BIND_HOST, () => {
+    const address = listener.address();
+    if (process.send && address && typeof address !== 'string') {
+      process.send({ type: 'sift-ready', port: address.port });
+    }
     console.log(`[Sift Server] running on http://${BIND_HOST}:${PORT}`);
   });
 }
+
+// Express' default error page is HTML. API callers must always receive JSON,
+// including malformed request bodies, CORS errors and unexpected exceptions.
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (!req.path.startsWith('/api/')) return next(err);
+  const status = err.type === 'entity.parse.failed' ? 400 : err.type === 'entity.too.large' ? 413 : 500;
+  res.status(status).json({ success: false, error: status === 400 ? 'Geçersiz JSON isteği.' : 'Sunucu isteği tamamlayamadı.' });
+});
 
 // Only launch background HTTP listener if NOT run inside a serverless runtime (e.g. Vercel)
 if (process.env.VERCEL !== "1" && !process.env.VERCEL_ENV && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
@@ -865,4 +1059,3 @@ if (process.env.VERCEL !== "1" && !process.env.VERCEL_ENV && !process.env.AWS_LA
 
 export default app;
 export { app, startServer };
-

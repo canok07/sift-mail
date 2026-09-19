@@ -126,7 +126,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           onClick={onScanAll}
           disabled={isScanning}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white font-bold text-xs shadow-xs transition-all disabled:opacity-50"
-          title="Tüm postaları Gemini AI güvenlik ve phishing taramasından geçir"
+          title="Yüklenen iletileri seçili AI sağlayıcısıyla analiz et"
         >
           <Sparkles className={`w-3.5 h-3.5 ${isScanning ? 'animate-spin text-emerald-400' : ''}`} />
           <span>{isScanning ? 'Taranıyor...' : 'AI ile Tara'}</span>

@@ -47,7 +47,7 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
   onOpenAssistant,
   theme = 'light',
 }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [ruleCreated, setRuleCreated] = useState(false);
 
   if (!email) return null;
@@ -209,7 +209,7 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
             </div>
             <div>
               <span className="opacity-60 block font-medium mb-0.5">{t('detail.dateAndLabels')}:</span>
-              <span className="text-xs font-medium block">{email.date || 'Tarih bilgisi yok'}</span>
+              <span className="text-xs font-medium block">{Number.isNaN(Date.parse(email.date)) ? email.date : new Date(email.date).toLocaleString(i18n.language)}</span>
               {email.labels && email.labels.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-1.5">
                   {email.labels.map((lbl) => (
@@ -237,6 +237,7 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
             />
           </div>
 
+          <details className="space-y-3"><summary className="cursor-pointer text-sm text-zinc-500">AI analizi ve gelişmiş işlemler</summary>
           {/* Gemini AI NLP Reasoning Block */}
           <div
             className={`p-6 rounded-2xl space-y-3 transition-colors ${
@@ -247,7 +248,7 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
               <div className="flex items-center gap-2.5">
                 <Sparkles className="w-5 h-5 text-emerald-400" />
                 <h3 className="text-xs font-bold uppercase tracking-wider text-emerald-400">
-                  {t('detail.geminiNLPHeading')}
+                  AI analizi
                 </h3>
               </div>
               {!analysis && (
@@ -286,7 +287,7 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
               </>
             ) : (
               <p className="text-xs opacity-70">
-                Bu ileti henüz taranmadı. Gemini NLP modeli ile anında güvenlik kontrolü yapabilirsiniz.
+                Seçtiğiniz AI sağlayıcısıyla bu iletiyi analiz edebilirsiniz.
               </p>
             )}
           </div>
@@ -388,6 +389,7 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
               </div>
             )}
           </div>
+          </details>
         </div>
 
         {/* Footer Actions - Single-handed friendly button sizing */}
@@ -441,17 +443,7 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
                 <span>AI Asistan ile İncele</span>
               </button>
             )}
-            <button
-              onClick={() => onMarkSafe(email)}
-              className={`inline-flex items-center gap-2 px-4 py-3 rounded-2xl text-xs font-bold transition-colors min-h-[48px] ${
-                isOled
-                  ? 'bg-[#222222] hover:bg-[#2c2c2c] text-zinc-100'
-                  : 'bg-white hover:bg-slate-100 text-slate-800 shadow-xs dark:bg-slate-800 dark:text-white'
-              }`}
-            >
-              <UserCheck className="w-4 h-4 text-emerald-500" />
-              {t('actions.markSafe')}
-            </button>
+
             <button
               onClick={onClose}
               className="px-5 py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white dark:bg-white dark:text-slate-900 text-xs font-bold transition-colors min-h-[48px]"

@@ -1,322 +1,125 @@
-// Electron Desktop Application Entry Point for Sift
-// Native desktop window, system tray minimization, and background monitoring
-const { app, BrowserWindow, Menu, Tray, nativeImage, shell, Notification } = require('electron');
-const path = require('path');
-const fs = require('fs');
-const http = require('http');
-const { fork } = require('child_process');
+const { app, BrowserWindow, dialog, shell, session } = require('electron');
+const { fork } = require('node:child_process');
+const path = require('node:path');
+const fs = require('node:fs');
 
-let mainWindow = null;
-let tray = null;
-let isQuitting = false;
-let backendProcess = null;
+let window = null;
+let backend = null;
+let quitting = false;
+let baseUrl = null;
+let logFile;
 
-const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
-
-function startBackendServer() {
-  // First check if a backend server is already active on port 3000 (e.g. during dev mode)
-  const req = http.get('http://127.0.0.1:3000/api/health', (res) => {
-    if (res.statusCode === 200) {
-      console.log('[Sift Electron] Backend server is already running on port 3000.');
-    }
-  });
-
-  req.on('error', () => {
-    // Port 3000 is not responding, spawn bundled backend server
-    const serverScript = path.join(app.getAppPath(), 'dist', 'server.cjs');
-    if (fs.existsSync(serverScript)) {
-      console.log('[Sift Electron] Spawning local backend process:', serverScript);
-      try {
-        backendProcess = fork(serverScript, [], {
-          env: {
-            ...process.env,
-            PORT: '3000',
-            HOST: '127.0.0.1',
-            NODE_ENV: 'production',
-          },
-          stdio: 'inherit',
-        });
-
-        backendProcess.on('error', (err) => {
-          console.error('[Sift Electron] Backend child process error:', err);
-        });
-
-        backendProcess.on('exit', (code, signal) => {
-          console.log(`[Sift Electron] Backend process exited with code ${code} signal ${signal}`);
-        });
-      } catch (err) {
-        console.error('[Sift Electron] Failed to spawn backend process:', err);
-      }
-    } else {
-      console.log('[Sift Electron] dist/server.cjs not found. Ensure `npm run build` was run before packaging.');
-    }
-  });
+function log(message) {
+  if (logFile) fs.appendFileSync(logFile, new Date().toISOString() + ' ' + message + '\n');
 }
 
-function stopBackendServer() {
-  if (backendProcess) {
-    console.log('[Sift Electron] Stopping backend child process...');
-    try {
-      backendProcess.kill('SIGTERM');
-    } catch (err) {
-      // ignore
-    }
-    backendProcess = null;
-  }
-}
-
-function getIconPath() {
-  const candidatePaths = [
-    path.join(__dirname, '..', 'public', 'pwa-192x192.png'),
-    path.join(app.getAppPath(), 'public', 'pwa-192x192.png'),
-    path.join(__dirname, '..', 'dist', 'pwa-192x192.png'),
-    path.join(app.getAppPath(), 'dist', 'pwa-192x192.png'),
-    path.join(__dirname, '..', 'public', 'icon.svg'),
-    path.join(app.getAppPath(), 'public', 'icon.svg'),
-  ];
-
-  for (const p of candidatePaths) {
-    if (fs.existsSync(p)) return p;
-  }
-  return path.join(__dirname, '..', 'public', 'icon.svg');
-}
-
-function getDistIndexPath() {
-  // Safe path resolution for dev, unpackaged, and packaged asar environments
-  const candidatePaths = [
-    path.join(app.getAppPath(), 'dist', 'index.html'),
-    path.join(__dirname, '..', 'dist', 'index.html'),
-    path.join(__dirname, 'dist', 'index.html'),
-    path.join(process.resourcesPath || '', 'app.asar', 'dist', 'index.html'),
-    path.join(process.resourcesPath || '', 'app', 'dist', 'index.html'),
-  ];
-
-  for (const candidate of candidatePaths) {
-    try {
-      if (fs.existsSync(candidate)) {
-        return candidate;
-      }
-    } catch {
-      // ignore virtual fs check errors
-    }
-  }
-  // Default canonical fallback guaranteed to avoid null / blank screens
-  return path.join(app.getAppPath(), 'dist', 'index.html');
-}
-
-function createTray() {
-  try {
-    const iconPath = getIconPath();
-    const icon = nativeImage.createFromPath(iconPath);
-    tray = new Tray(icon.resize({ width: 16, height: 16 }));
-
-    const contextMenu = Menu.buildFromTemplate([
-      {
-        label: 'Sift — AI-Powered Inbox',
-        enabled: false,
+function startBackend() {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Yerel sunucu 30 saniye içinde başlayamadı.')), 30000);
+    const child = fork(path.join(app.getAppPath(), 'dist', 'server.cjs'), [], {
+      execPath: process.execPath,
+      cwd: app.getPath('userData'),
+      env: {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: '1', NODE_ENV: 'production', PORT: '47831', HOST: '127.0.0.1',
+        SIFT_DIST_PATH: path.join(app.getAppPath(), 'dist'),
+        SIFT_DATA_DIR: path.join(app.getPath('userData'), 'data'),
+        VERCEL: '', VERCEL_ENV: '', AWS_LAMBDA_FUNCTION_NAME: '',
       },
-      { type: 'separator' },
-      {
-        label: 'Uygulamayı Aç',
-        click: () => {
-          if (mainWindow) {
-            mainWindow.show();
-            mainWindow.focus();
-          } else {
-            createWindow();
-          }
-        },
-      },
-      {
-        label: 'Gelen Kutularını Şimdi Tara',
-        click: () => {
-          if (mainWindow) {
-            mainWindow.webContents.send('trigger-refresh');
-          }
-        },
-      },
-      {
-        label: 'Sistem Koruması: Aktif',
-        type: 'checkbox',
-        checked: true,
-      },
-      { type: 'separator' },
-      {
-        label: 'Tamamen Kapat (Çıkış)',
-        click: () => {
-          isQuitting = true;
-          app.quit();
-        },
-      },
-    ]);
-
-    tray.setToolTip('Sift (AI-Powered Inbox)');
-    tray.setContextMenu(contextMenu);
-
-    tray.on('double-click', () => {
-      if (mainWindow) {
-        if (mainWindow.isVisible()) {
-          mainWindow.focus();
-        } else {
-          mainWindow.show();
-        }
+      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+      windowsHide: true,
+    });
+    backend = child;
+    // Do not log mail content, credentials or provider responses.
+    child.stdout.on('data', () => {});
+    child.stderr.on('data', () => {});
+    child.once('error', error => {
+      clearTimeout(timer);
+      log('Backend start error: ' + (error.code || error.name));
+      reject(error);
+    });
+    child.on('message', message => {
+      if (message?.type === 'sift-ready' && Number.isInteger(message.port) && message.port > 0) {
+        clearTimeout(timer);
+        resolve('http://127.0.0.1:' + message.port);
       }
     });
-  } catch (err) {
-    console.warn('Tray başlatılamadı:', err);
-  }
+    child.once('exit', (code, signal) => {
+      clearTimeout(timer);
+      if (backend === child) backend = null;
+      const error = new Error('Yerel sunucu kapandı (kod: ' + code + ', sinyal: ' + (signal || '-') + ').');
+      log(error.message);
+      reject(error);
+      if (baseUrl && !quitting) {
+        dialog.showErrorBox('Sift bağlantısı kesildi', error.message + '\nUygulamayı yeniden açın.');
+        app.quit();
+      }
+    });
+  });
 }
 
-function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 850,
-    minWidth: 900,
-    minHeight: 600,
-    title: 'Sift — AI-Powered Inbox',
-    icon: getIconPath(),
-    backgroundColor: '#09090b',
-    show: false, // Prevents blank/black screen flash before content finishes loading
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      sandbox: true,
-    },
-    autoHideMenuBar: true,
-  });
-
-  // Show window smoothly when initial content is painted
-  mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
-  });
-
-  // Catch any load failures and attempt fallback to local server
-  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
-    console.warn(`[Sift] Page load failed (${errorCode}: ${errorDescription}) at ${validatedURL}`);
-    if (mainWindow && !mainWindow.isDestroyed() && !validatedURL.includes('localhost')) {
-      // Fallback attempt to local server if file load fails
-      mainWindow.loadURL('http://localhost:3000').catch(() => {});
-    }
-  });
-
-  // Load production dist index.html or dev server URL
-  const distIndexPath = getDistIndexPath();
-  if (distIndexPath && !isDev) {
-    mainWindow.loadFile(distIndexPath).catch((err) => {
-      console.error('[Sift] Failed to loadFile dist/index.html:', err);
-      mainWindow.loadURL('http://localhost:3000').catch(() => {});
-    });
-  } else if (distIndexPath && !process.env.VITE_DEV_SERVER_URL) {
-    mainWindow.loadFile(distIndexPath).catch(() => {
-      mainWindow.loadURL('http://localhost:3000').catch(() => {});
-    });
-  } else if (process.env.VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
-  } else {
-    mainWindow.loadURL('http://localhost:3000');
+async function createWindow() {
+  if (window && !window.isDestroyed()) {
+    if (window.isMinimized()) window.restore();
+    window.show();
+    window.focus();
+    return;
   }
-
-  // Minimize to system tray when user clicks the (X) close button
-  mainWindow.on('close', (event) => {
-    if (!isQuitting) {
-      event.preventDefault();
-      mainWindow.hide();
-
-      if (Notification.isSupported()) {
-        new Notification({
-          title: 'Sift',
-          body: 'Uygulama arka planda sistem tepsisinde çalışmaya ve gelen kutunuzu korumaya devam ediyor.',
-          icon: getIconPath(),
-        }).show();
-      }
-      return false;
-    }
+  const current = new BrowserWindow({
+    width: 1280, height: 850, minWidth: 900, minHeight: 600,
+    title: 'Sift v15 — Mail', backgroundColor: '#09090b',
+    show: false, autoHideMenuBar: true,
+    webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true },
   });
-
-  // Allow OAuth popups (Firebase Auth & Google Sign-In) to open as child windows with window.opener intact
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    // Check if this is an OAuth or Firebase authentication flow
-    if (
-      url.includes('firebaseapp.com') ||
-      url.includes('accounts.google.com') ||
-      url.includes('googleapis.com')
-    ) {
-      return {
-        action: 'allow',
-        overrideBrowserWindowOptions: {
-          width: 520,
-          height: 680,
-          autoHideMenuBar: true,
-          modal: false,
-          webPreferences: {
-            nodeIntegration: false,
-            contextIsolation: true,
-            sandbox: true,
-          },
-        },
-      };
-    }
-
-    // All standard external links (unsubscribe links, external docs) open in default system browser
-    if (url.startsWith('https:') || url.startsWith('http:')) {
-      shell.openExternal(url);
-    }
+  window = current;
+  current.once('closed', () => {
+    if (window === current) window = null;
+  });
+  current.once('ready-to-show', () => {
+    if (!current.isDestroyed()) current.show();
+  });
+  current.webContents.setWindowOpenHandler(({ url }) => {
+    const target = new URL(url);
+    if (target.protocol === 'https:') shell.openExternal(url).catch(() => {});
     return { action: 'deny' };
   });
-
-  mainWindow.on('closed', () => {
-    mainWindow = null;
+  current.webContents.on('will-navigate', (event, url) => {
+    if (new URL(url).origin !== baseUrl) event.preventDefault();
   });
+  try {
+    await current.loadURL(baseUrl);
+  } catch (error) {
+    if (!current.isDestroyed() && !quitting) {
+      dialog.showErrorBox('Sift açılamadı', error.message);
+      app.quit();
+    }
+  }
 }
 
-// Single application instance lock
-const gotTheLock = app.requestSingleInstanceLock();
-if (!gotTheLock) {
+if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
-    }
+    if (baseUrl && !quitting) void createWindow();
   });
-
-  app.whenReady().then(() => {
-    // Strip Electron from User-Agent to avoid Google OAuth disallowed_useragent security block
-    try {
-      if (app.userAgentFallback) {
-        app.userAgentFallback = app.userAgentFallback.replace(/Electron\/[0-9\.]+\s/, '');
-      }
-    } catch {
-      // ignore
-    }
-
-    // Spawn bundled backend server if not already running
-    startBackendServer();
-
-    createTray();
-    createWindow();
-
-    app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
-        createWindow();
-      } else if (mainWindow) {
-        mainWindow.show();
-      }
-    });
-  });
-
   app.on('before-quit', () => {
-    isQuitting = true;
-    stopBackendServer();
+    quitting = true;
+    if (backend) backend.kill();
   });
-
-  app.on('will-quit', () => {
-    stopBackendServer();
-  });
-
-  app.on('window-all-closed', () => {
-    // Keep running in system tray unless user explicitly quits
+  app.on('window-all-closed', () => app.quit());
+  app.whenReady().then(async () => {
+    logFile = path.join(app.getPath('userData'), 'startup.log');
+    try {
+      await session.defaultSession.clearStorageData({ storages: ['serviceworkers', 'cachestorage'] });
+      baseUrl = await startBackend();
+      if (!quitting) await createWindow();
+    } catch (error) {
+      log('Startup failed: ' + error.message);
+      dialog.showErrorBox('Sift başlatılamadı', error.message + '\nKayıt: ' + logFile);
+      app.quit();
+    }
+  }).catch(error => {
+    dialog.showErrorBox('Sift başlatılamadı', error.message);
+    app.quit();
   });
 }
