@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "http";
-import app from "../server.ts";
+import app from "../core/server.ts";
 
 /**
  * Vercel Serverless Function Entry Point for Sift Backend APIs.

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Sift Mail</string>
+    <string name="title_activity_main">Sift Mail</string>
+    <string name="package_name">com.sift.app</string>
+    <string name="custom_url_scheme">com.sift.app</string>
+</resources>

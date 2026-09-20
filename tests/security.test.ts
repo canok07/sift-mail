@@ -8,20 +8,20 @@ import {
   getVaultSecret,
   deleteVaultSecret,
   getVaultSummary,
-} from '../server/vault';
-import { getTlsOptions } from '../server/imap';
+} from '../core/security/vault';
+import { getTlsOptions } from '../core/sync/imap';
 import {
   VaultSaveSchema,
   EmailSyncSchema,
   ImapConnectSchema,
   SmtpSendSchema,
   AnalyzeBatchSchema,
-} from '../server/validation';
+} from '../core/security/validation';
 import {
   getActiveSessionToken,
   createRateLimiter,
   isOriginAllowed,
-} from '../server/security';
+} from '../core/security';
 
 describe('Sift Security Hardening & Validation Test Suite', () => {
   const testKey = 'test_secret_integration_key';

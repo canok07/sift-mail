@@ -9,7 +9,7 @@ let scenario = {}, queries = [];
 class FakeImap {
  async connect() {}
  async logout() {}
- async list() {return [{path:'INBOX',name:'INBOX'},{path:'[Gmail]/Gönderilmiş Postalar',name:'Gönderilmiş Postalar',specialUse:'\\Sent'},{path:'[Gmail]/Spam',name:'Spam',specialUse:'\\Junk'}];}
+ async list() {return [{path:'INBOX',name:'INBOX'},{path:'[Gmail]/Gönderilmiş Postalar',name:'Gönderilmiş Postalar',specialUse:'\\Sent'},{path:'[Gmail]/Spam',name:'Spam',specialUse:'\\Junk'},{path:'[Gmail]/Çöp Kutusu',name:'Çöp Kutusu',specialUse:'\\Trash'},{path:'[Gmail]/Tüm Postalar',name:'Tüm Postalar',specialUse:'\\All'}];}
  async getMailboxLock(folder) {
   if (scenario.failure === folder) throw new Error('Folder failed');
   this.folder = folder; this.mailbox = {exists: folder.endsWith('/Spam') ? (scenario.emptySpam ? 0 : 3) : 205};
@@ -22,13 +22,17 @@ class FakeImap {
   const date=this.folder==='INBOX'?'19':this.folder.endsWith('/Spam')?'17':'18';
   for(let uid=start;uid<=end;uid++) yield {uid,source:Buffer.from(raw.toString().replace('18 Sep',date+' Sep')),envelope:{from:[{address:'alice@example.com',name:'Alice'}],subject:'MIME test',date:new Date()},flags:new Set()};
  }
+ async messageFlagsAdd(){this.flags=new Set(['\\Seen']);}
+ async messageFlagsRemove(){this.flags=new Set();}
+ async messageMove(uid,destination){this.moved={uid,destination};}
+ async fetchOne(){return this.moved?false:{uid:1,flags:this.flags||new Set()};}
 }
-const compiled=buildSync({entryPoints:['server/imap.ts'],bundle:true,platform:'node',format:'cjs',packages:'external',write:false}).outputFiles[0].text;
-const instance=new Module(path.resolve('server/test-module.cjs'),module);
-instance.filename=path.resolve('server/test-module.cjs');instance.paths=module.paths;
+const compiled=buildSync({entryPoints:['core/sync/imap.ts'],bundle:true,platform:'node',format:'cjs',packages:'external',write:false}).outputFiles[0].text;
+const instance=new Module(path.resolve('core/sync/test-module.cjs'),module);
+instance.filename=path.resolve('core/sync/test-module.cjs');instance.paths=module.paths;
 instance.require=(name)=>name==='imapflow'?{ImapFlow:FakeImap}:require(name);
 instance._compile(compiled,instance.filename);
-const {fetchImapMessages,classifyMailbox}=instance.exports;
+const {fetchImapMessages,classifyMailbox,performImapAction}=instance.exports;
 const options={host:'imap.example.com',port:993,secure:true,auth:{user:'test@example.com',pass:'fixture'},accountId:'test'};
 
 test('IMAP folders and decoded complete MIME bodies remain separate',async()=>{
@@ -65,9 +69,15 @@ test('empty spam is distinct from a folder failure',async()=>{
  assert.equal(result.success,false);assert.match(result.error,/spam/);
 });
 test('JSON containing an HTML email is valid API data',async()=>{
- const code=buildSync({entryPoints:['src/services/apiClient.ts'],bundle:true,platform:'node',format:'cjs',write:false}).outputFiles[0].text;
+ const code=buildSync({entryPoints:['shared/services/apiClient.ts'],bundle:true,platform:'node',format:'cjs',write:false}).outputFiles[0].text;
  const parser=new Module(path.resolve('parser.cjs'),module);parser._compile(code,path.resolve('parser.cjs'));
  const value={success:true,bodyHtml:'<!doctype html><html><body>Hello</body></html>'};
  assert.deepEqual(await parser.exports.parseResponseSafe(new Response(JSON.stringify(value))),value);
  await assert.rejects(()=>parser.exports.parseResponseSafe(new Response('<html>404</html>',{status:404})));
+});
+test('real IMAP actions are independently verified',async()=>{
+ const read=await performImapAction({...options,uid:1,sourceFolder:'INBOX',action:'mark_read'});
+ assert.deepEqual(read,{success:true,verified:true});
+ const trash=await performImapAction({...options,uid:1,sourceFolder:'INBOX',action:'trash'});
+ assert.equal(trash.success,true);assert.equal(trash.verified,true);assert.equal(trash.destination,'[Gmail]/Çöp Kutusu');
 });

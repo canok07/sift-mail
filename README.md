@@ -42,6 +42,41 @@ Ayrıntılar: [v16 değişiklik notları](DEGISIKLIKLER-v16.md).
 
 ## Çalıştırma
 
+Kod tabanı platformlar arasında ortak bir yapı kullanır:
+
+- `core/`: posta motoru, sağlayıcılar, senkronizasyon, kurallar, AI, eklentiler ve güvenlik
+- `shared/`: ortak React arayüzü, tipler ve API istemcileri
+- `apps/desktop/`: Electron ile Windows, macOS ve Linux masaüstü girişi
+- `apps/web/`: Vite web/PWA girişi
+- `apps/mobile/`: Capacitor ile Android ve iOS yapılandırması
+
+Platform komutları:
+
+```powershell
+# Web (API + arayüz geliştirme sunucusu)
+npm run dev:web
+npm run build:web
+
+# Masaüstü (ortak üretim derlemesini hazırlar ve Electron'u açar)
+npm run dev:desktop
+npm run build:win       # Windows
+npm run build:mac       # macOS üzerinde
+npm run build:linux     # Linux üzerinde
+
+# Mobil (Android SDK/Xcode ve Capacitor platform projesi gerekir)
+npm run build:mobile       # Android ve iOS projelerini senkronize eder
+npm run dev:mobile
+npm run build:android
+npm run build:ios       # macOS üzerinde
+
+# Tüm ortak kontroller
+npm run lint
+npm test
+npm run build
+```
+
+`npm run dev` web geliştirme komutunun kısa adıdır. Android ve iOS yerel projeleri `apps/mobile/` altında tutulur; platforma özel dosyalar bu alanın dışına taşmaz.
+
 Hazır taşınabilir paket kullanıyorsanız ZIP’in tamamını bir klasöre çıkarın ve içindeki `Sift.exe` dosyasını açın. `resources` klasörü ve diğer dosyalar EXE’nin yanında kalmalıdır. Eski Sift sürümünü önce kapatın.
 
 Kaynak koddan çalıştırmak için Node.js ve npm gerekir:

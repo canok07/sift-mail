@@ -19,20 +19,27 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@shared/*": [
+        "./shared/*"
+      ],
+      "@core/*": [
+        "./core/*"
       ]
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
   "include": [
-    "src/**/*",
-    "server.ts",
-    "server/**/*",
-    "test/**/*"
+    "core/**/*",
+    "shared/**/*",
+    "apps/**/*",
+    "api/**/*",
+    "tests/**/*.ts"
   ],
   "exclude": [
     "node_modules",
     "dist",
-    "electron"
+    "apps/desktop/electron"
   ]
 }
