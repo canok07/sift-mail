@@ -139,19 +139,11 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-sm animate-fade-in overflow-y-auto">
       <div
-        className={`rounded-3xl max-w-3xl w-full my-6 shadow-2xl flex flex-col max-h-[92vh] overflow-hidden transition-colors ${
-          isOled
-            ? 'bg-[#0a0a0a] text-zinc-100'
-            : isDark
-            ? 'bg-slate-900 text-slate-100'
-            : 'bg-white text-slate-900'
-        }`}
+        className="theme-panel border theme-border rounded-3xl max-w-3xl w-full my-6 shadow-2xl flex flex-col max-h-[92vh] overflow-hidden transition-colors"
       >
         {/* Header - Minimalist & Spacious */}
         <div
-          className={`p-6 sm:p-7 flex items-center justify-between gap-4 transition-colors ${
-            isOled ? 'bg-[#121212]' : isDark ? 'bg-slate-950/70' : 'bg-slate-50/80'
-          }`}
+          className="theme-elevated p-6 sm:p-7 flex items-center justify-between gap-4 border-b theme-border transition-colors"
         >
           <div className="flex items-center gap-3.5">
             <div
@@ -210,9 +202,7 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
         <div className="p-6 sm:p-8 overflow-y-auto space-y-6">
           {/* Sender & Date Info */}
           <div
-            className={`grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs p-5 rounded-2xl ${
-              isOled ? 'bg-[#121212]' : isDark ? 'bg-slate-800/60' : 'bg-slate-50'
-            }`}
+            className="theme-elevated grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs p-5 rounded-2xl"
           >
             <div>
               <span className="opacity-60 block font-medium mb-0.5">{t('detail.sender')}:</span>

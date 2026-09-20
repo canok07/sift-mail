@@ -75,6 +75,23 @@ html.theme-forest {
 .theme-border { border-color: var(--border-subtle); }
 .theme-secondary { color: var(--text-secondary); }
 .theme-muted { color: var(--text-muted); }
+.theme-hover:hover { background-color: color-mix(in srgb, var(--text-primary) 7%, transparent); }
+
+/* Keep older, form-heavy panels readable while they are progressively moved to theme tokens. */
+html.dark .theme-aware-legacy.bg-white,
+html.dark .theme-aware-legacy .bg-white { background-color: var(--bg-card) !important; }
+html.dark .theme-aware-legacy .bg-slate-50,
+html.dark .theme-aware-legacy .bg-slate-100 { background-color: var(--bg-elevated) !important; }
+html.dark .theme-aware-legacy .text-slate-900,
+html.dark .theme-aware-legacy .text-slate-800,
+html.dark .theme-aware-legacy .text-slate-700 { color: var(--text-primary) !important; }
+html.dark .theme-aware-legacy .text-slate-600,
+html.dark .theme-aware-legacy .text-slate-500,
+html.dark .theme-aware-legacy .text-slate-400 { color: var(--text-secondary) !important; }
+html.dark .theme-aware-legacy.border-slate-200,
+html.dark .theme-aware-legacy .border-slate-100,
+html.dark .theme-aware-legacy .border-slate-200,
+html.dark .theme-aware-legacy .border-slate-300 { border-color: var(--border-subtle) !important; }
 
 input[type="text"], input[type="email"], input[type="password"], input[type="search"], textarea, select { width:100%; border:1px solid color-mix(in srgb,currentColor 15%,transparent); border-radius:.75rem; padding:.7rem .85rem; background:color-mix(in srgb,var(--bg-card) 90%,transparent); color:inherit; outline:none; }
 input[type="text"]:focus, input[type="email"]:focus, input[type="password"]:focus, input[type="search"]:focus, textarea:focus, select:focus { border-color:var(--sift-accent); box-shadow:0 0 0 2px color-mix(in srgb,var(--sift-accent) 25%,transparent); }

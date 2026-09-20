@@ -2,6 +2,22 @@
 
 Sift Mail, Electron tabanlı çoklu hesap masaüstü e-posta istemcisidir. Gmail, Outlook, Apple, Yandex ve standart IMAP/SMTP hesaplarını; e-posta okumayı ve isteğe bağlı AI analizini tek uygulamada toplar.
 
+## 0.7.3 toplu iyileştirme / cumulative improvements
+
+**Türkçe**
+
+- Mail okuma alanındaki kalan eski bej renk kaldırıldı; HTML ve düz metin içeriği beş temanın kendi paletine bağlandı.
+- Yeni mail, mail ayrıntısı ve otomatik kural pencereleri Açık, Koyu, OLED, Okyanus ve Orman temalarıyla tutarlı hâle getirildi.
+- Yeni mail araçlarının, güvenli içerik uyarılarının ve sayfalama denetimlerinin Türkçe, İngilizce ve Almanca çevirileri tamamlandı.
+- Tema, güvenlik, klasör ayrımı, eklenti sistemi, üretim paketi ve Windows açılış kontrolleri genişletildi.
+
+**English**
+
+- Removed the remaining legacy beige email-body color; protected HTML and plain-text content now use each of the five theme palettes.
+- Made compose, message detail, and automatic-rule dialogs consistent across Light, Dark, OLED, Ocean, and Forest themes.
+- Completed Turkish, English, and German translations for compose tools, protected-content notices, and pagination controls.
+- Expanded checks for themes, security, folder isolation, plugins, production packaging, and Windows startup.
+
 ## 0.7.2 tema yenilemesi
 
 - Açık tema bej tondan çıkarılıp temiz, yumuşak ve nötr bir palete geçirildi.

@@ -85,7 +85,7 @@ export const AutoRuleModal: React.FC<AutoRuleModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in overflow-y-auto">
-      <div className="bg-white rounded-2xl max-w-2xl w-full my-8 shadow-2xl border border-slate-200 flex flex-col max-h-[90vh] overflow-hidden">
+      <div className="theme-aware-legacy bg-white rounded-2xl max-w-2xl w-full my-8 shadow-2xl border border-slate-200 flex flex-col max-h-[90vh] overflow-hidden">
         {/* Modal Header */}
         <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between gap-4 bg-slate-50">
           <div className="flex items-center gap-3">
