@@ -23,7 +23,7 @@ export const EmailCard: React.FC<EmailCardProps> = ({email,isSelected,onToggleSe
  const {i18n}=useTranslation();
  const parsedDate=new Date(email.date);
  const date=Number.isNaN(parsedDate.getTime())?email.date:parsedDate.toLocaleString(i18n.language);
- return <div className={`flex items-start gap-3 px-4 py-3 rounded-lg border border-black/5 dark:border-white/5 ${theme==='light'?'bg-white text-zinc-800':'bg-zinc-900 text-zinc-200'} ${isSelected?'ring-1 ring-emerald-500':''}`}>
+ return <div className={`theme-panel theme-border flex items-start gap-3 px-4 py-3 rounded-lg border ${isSelected?'ring-1 ring-emerald-500':''}`}>
    <input aria-label={email.subject} type="checkbox" className="mt-1 accent-emerald-500" checked={isSelected} onChange={()=>onToggleSelect(email.id)}/>
    <button onClick={()=>onOpenDetail(email)} className="min-w-0 flex-1 text-left">
     <div className="flex justify-between gap-3"><span className={`truncate text-sm ${!email.isRead?'font-semibold':''}`}>{email.fromName || email.from}</span><time className="text-[11px] shrink-0 text-zinc-500">{date}</time></div>

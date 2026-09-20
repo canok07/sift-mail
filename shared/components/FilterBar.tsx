@@ -41,7 +41,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 }) => {
   const {t}=useTranslation();
   const isOled = theme === 'oled';
-  const isDark = theme === 'dark' || isOled;
+  const isDark = theme !== 'light';
 
   const barBg = isOled
     ? 'bg-[#000000] border-b border-white/10 text-zinc-300'

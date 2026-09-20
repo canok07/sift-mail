@@ -25,7 +25,7 @@ export const ConfirmationModal: React.FC<ExtendedConfirmationModalProps> = ({
   if (!isOpen) return null;
 
   const isOled = theme === 'oled';
-  const isDark = theme === 'dark' || isOled;
+  const isDark = theme !== 'light';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">

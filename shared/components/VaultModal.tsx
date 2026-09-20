@@ -108,7 +108,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
   if (!isOpen) return null;
 
   const isOled = theme === 'oled';
-  const isDark = theme === 'dark' || isOled;
+  const isDark = theme !== 'light';
 
   const modalBg = isOled ? 'bg-[#0a0a0a] text-zinc-100 border-white/10' : isDark ? 'bg-[#18181b] text-zinc-100 border-white/10' : 'bg-white text-zinc-900 border-zinc-200';
   const cardBg = isOled ? 'bg-white/[0.03] border-white/10' : isDark ? 'bg-white/[0.04] border-white/10' : 'bg-zinc-50 border-zinc-200';

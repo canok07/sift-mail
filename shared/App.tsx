@@ -110,14 +110,11 @@ export default function App() {
     root.classList.remove('dark', 'theme-oled', 'theme-ocean', 'theme-forest');
     if (theme === 'oled') {
       root.classList.add('dark', 'theme-oled');
-      document.body.style.backgroundColor = '#000000';
     } else if (theme === 'dark' || theme === 'ocean' || theme === 'forest') {
       root.classList.add('dark');
       if (theme !== 'dark') root.classList.add(`theme-${theme}`);
-      document.body.style.backgroundColor = theme === 'ocean' ? '#071923' : theme === 'forest' ? '#0d1b13' : '#121212';
-    } else {
-      document.body.style.backgroundColor = '#f8f9fa';
     }
+    document.body.style.backgroundColor = 'var(--bg-canvas)';
     root.style.setProperty('--sift-accent', accentColor);
     root.style.setProperty('--sift-font-size', `${fontSize}px`);
     document.body.style.fontFamily = fontFamily;
@@ -1189,13 +1186,7 @@ export default function App() {
 
   return (
     <div
-      className={`min-h-screen flex flex-col font-sans transition-colors duration-200 ${
-        theme === 'oled'
-          ? 'bg-[#000000] text-zinc-100'
-          : theme !== 'light'
-          ? 'bg-[#09090b] text-zinc-300'
-          : 'bg-[#f8f9fa] text-slate-800'
-      }`}
+      className="app-shell min-h-screen flex flex-col font-sans transition-colors duration-200"
     >
       {/* Toast Notification */}
       {toast && (
@@ -1306,13 +1297,7 @@ export default function App() {
               <div className="space-y-2">
           {isLoading ? (
             <div
-              className={`rounded-3xl border-0 p-12 text-center shadow-xs transition-colors ${
-                theme === 'oled'
-                  ? 'bg-[#121212] text-zinc-100'
-                  : theme === 'dark'
-                  ? 'bg-slate-900 text-slate-100'
-                  : 'bg-white text-slate-800'
-              }`}
+              className="theme-panel rounded-3xl border theme-border p-12 text-center shadow-xs transition-colors"
             >
               <Sparkles className="w-8 h-8 text-emerald-500 animate-spin mx-auto mb-3" />
               <p className="text-sm font-bold tracking-tight">
@@ -1324,13 +1309,7 @@ export default function App() {
             </div>
           ) : filteredEmails.length === 0 ? (
             <div
-              className={`rounded-3xl border-0 p-12 text-center shadow-xs transition-colors ${
-                theme === 'oled'
-                  ? 'bg-[#121212] text-zinc-100'
-                  : theme === 'dark'
-                  ? 'bg-slate-900 text-slate-100'
-                  : 'bg-white text-slate-800'
-              }`}
+              className="theme-panel rounded-3xl border theme-border p-12 text-center shadow-xs transition-colors"
             >
               <div className="w-14 h-14 rounded-2xl bg-black/5 dark:bg-white/5 text-slate-400 flex items-center justify-center mx-auto mb-3">
                 <Inbox className="w-7 h-7" />
@@ -1358,13 +1337,7 @@ export default function App() {
                 return (
                   <div
                     key={category}
-                    className={`rounded-3xl border-0 shadow-xs overflow-hidden transition-colors ${
-                      theme === 'oled'
-                        ? 'bg-[#121212]'
-                        : theme === 'dark'
-                        ? 'bg-slate-900'
-                        : 'bg-white'
-                    }`}
+                    className="theme-panel rounded-3xl border theme-border shadow-xs overflow-hidden transition-colors"
                   >
                     {/* Category Group Header */}
                     <div

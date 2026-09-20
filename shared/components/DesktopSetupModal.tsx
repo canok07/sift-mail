@@ -38,7 +38,7 @@ export const DesktopSetupModal: React.FC<DesktopSetupModalProps> = ({
   if (!isOpen) return null;
 
   const isOled = theme === 'oled';
-  const isDark = theme === 'dark' || isOled;
+  const isDark = theme !== 'light';
 
   const handleDownloadWindows = () => {
     downloadWindowsSetupExe(currentUrl);

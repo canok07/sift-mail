@@ -1,34 +1,37 @@
 @import "tailwindcss" source(".");
 
 :root {
-  --bg-canvas: #e9e4da;
-  --bg-card: #f7f4ee;
-  --bg-elevated: #ddd7cc;
+  --bg-canvas: #f3f6f9;
+  --bg-card: #ffffff;
+  --bg-elevated: #e8edf3;
+  --border-subtle: #d8e0e8;
   --sift-accent: #10b981;
   --sift-font-size: 14px;
-  --text-primary: #18181b;
-  --text-secondary: #71717a;
-  --text-muted: #a1a1aa;
+  --text-primary: #172033;
+  --text-secondary: #536273;
+  --text-muted: #8491a3;
 }
 
 html.dark {
-  --bg-canvas: #09090b;
-  --bg-card: #18181b;
-  --bg-elevated: #27272a;
-  --text-primary: #d4d4d8;
-  --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
+  --bg-canvas: #0f1115;
+  --bg-card: #171a21;
+  --bg-elevated: #222731;
+  --border-subtle: #2d3440;
+  --text-primary: #f1f3f5;
+  --text-secondary: #b5beca;
+  --text-muted: #7d8898;
   color-scheme: dark;
 }
 
 html.theme-oled,
 html.theme-oled body {
   --bg-canvas: #000000;
-  --bg-card: #0c0c0e;
-  --bg-elevated: #18181b;
-  --text-primary: #d4d4d8;
-  --text-secondary: #71717a;
-  --text-muted: #52525b;
+  --bg-card: #090b0f;
+  --bg-elevated: #141821;
+  --border-subtle: #242a35;
+  --text-primary: #f4f4f5;
+  --text-secondary: #aeb5c0;
+  --text-muted: #6f7887;
   background-color: #000000 !important;
   color-scheme: dark;
 }
@@ -45,8 +48,33 @@ body {
   background-position: center;
 }
 
-html.theme-ocean { --bg-canvas:#071923; --bg-card:#0d2633; --bg-elevated:#133746; }
-html.theme-forest { --bg-canvas:#0d1b13; --bg-card:#14281d; --bg-elevated:#203b2a; }
+html.theme-ocean {
+  --bg-canvas: #07141c;
+  --bg-card: #0d202b;
+  --bg-elevated: #153342;
+  --border-subtle: #244857;
+  --text-primary: #edf9ff;
+  --text-secondary: #abcbd8;
+  --text-muted: #7395a3;
+}
+
+html.theme-forest {
+  --bg-canvas: #0b1510;
+  --bg-card: #122219;
+  --bg-elevated: #1b3325;
+  --border-subtle: #2b4b37;
+  --text-primary: #eff8f1;
+  --text-secondary: #b1cbb8;
+  --text-muted: #799483;
+}
+
+.theme-canvas,
+.app-shell { background-color: var(--bg-canvas); color: var(--text-primary); }
+.theme-panel { background-color: var(--bg-card); color: var(--text-primary); }
+.theme-elevated { background-color: var(--bg-elevated); color: var(--text-primary); }
+.theme-border { border-color: var(--border-subtle); }
+.theme-secondary { color: var(--text-secondary); }
+.theme-muted { color: var(--text-muted); }
 
 input[type="text"], input[type="email"], input[type="password"], input[type="search"], textarea, select { width:100%; border:1px solid color-mix(in srgb,currentColor 15%,transparent); border-radius:.75rem; padding:.7rem .85rem; background:color-mix(in srgb,var(--bg-card) 90%,transparent); color:inherit; outline:none; }
 input[type="text"]:focus, input[type="email"]:focus, input[type="password"]:focus, input[type="search"]:focus, textarea:focus, select:focus { border-color:var(--sift-accent); box-shadow:0 0 0 2px color-mix(in srgb,var(--sift-accent) 25%,transparent); }

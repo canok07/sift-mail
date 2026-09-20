@@ -27,7 +27,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ accounts = [], activeAccountId
     {id:'threats', label:t('nav.spam'), icon:AlertTriangle, total:count('spam')},
   ];
   const submitLabel = () => { const name=labelName.trim(); if(name){onCreateLabel?.(name,'#10b981');setLabelName('');setAdding(false);} };
-  return <aside className={`w-64 shrink-0 border-r border-black/10 dark:border-white/10 p-3 overflow-y-auto ${theme === 'light' ? 'bg-[#eeeae2] text-stone-800' : 'bg-zinc-950 text-zinc-200'}`}>
+  return <aside className="theme-panel theme-border w-64 shrink-0 border-r p-3 overflow-y-auto">
     <button onClick={onCompose} className="w-full mb-4 flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white py-3 text-sm font-bold"><Plus size={17}/>{t('compose.title')}</button>
     <p className="px-3 mb-2 text-[10px] uppercase tracking-widest opacity-50">{t('nav.accounts')}</p>
     <div className="space-y-1 mb-4">
@@ -42,6 +42,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ accounts = [], activeAccountId
       {labels.length===0?<p className="px-3 text-xs opacity-45">{t('labels.empty')}</p>:labels.map(label=><div key={label.id} className={`group flex items-center rounded-lg ${activeLabel===label.id?'bg-emerald-500/15':''}`}><button onClick={()=>onSelectLabel?.(label.id)} className="flex-1 flex items-center gap-2 px-3 py-2 text-xs"><Tag size={14} style={{color:label.color}}/><span className="truncate">{label.name}</span></button><button onClick={()=>onDeleteLabel?.(label.id)} className="p-2 opacity-0 group-hover:opacity-50"><X size={13}/></button></div>)}
     </div>
     {aiEnabled&&<button onClick={onToggleAssistant} className="flex items-center gap-2 px-3 py-2 text-xs opacity-60 hover:opacity-100"><Sparkles size={15}/>{t('ai.assistant')}</button>}
-    <p className="px-3 mt-3 text-[10px] opacity-40">Sift Mail · 0.7.1</p>
+    <p className="px-3 mt-3 text-[10px] opacity-40">Sift Mail · 0.7.2</p>
   </aside>;
 };

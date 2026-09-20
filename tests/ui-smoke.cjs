@@ -70,6 +70,25 @@ const fs=require('node:fs');
   await expect(page.getByTestId('settings-page')).toBeVisible();
   await page.getByRole('button',{name:'Arayüz',exact:true}).click();
   await expect(page.getByText('Ekrandaki mail sayısı',{exact:true})).toHaveCount(0);
+  const themes=[['Yumuşak açık','#f3f6f9','light'],['Koyu','#0f1115','dark'],['OLED','#000','oled'],['Okyanus','#07141c','ocean'],['Orman','#0b1510','forest']];
+  for(const [label,expectedCanvas,file] of themes){
+   await page.getByRole('button',{name:label,exact:true}).click();
+   const colors=await page.evaluate(()=>{const style=getComputedStyle(document.documentElement);return {canvas:style.getPropertyValue('--bg-canvas').trim(),text:style.getPropertyValue('--text-primary').trim()}});
+   if(colors.canvas.toLowerCase()!==expectedCanvas)throw new Error(`${label} theme canvas mismatch: ${colors.canvas}`);
+   const rgb=hex=>{const full=hex.length===4?`#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`:hex;return [1,3,5].map(i=>parseInt(full.slice(i,i+2),16)/255).map(v=>v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4))};
+   const luminance=hex=>{const [r,g,b]=rgb(hex);return .2126*r+.7152*g+.0722*b};
+   const contrast=(Math.max(luminance(colors.canvas),luminance(colors.text))+.05)/(Math.min(luminance(colors.canvas),luminance(colors.text))+.05);
+   if(contrast<4.5)throw new Error(`${label} theme contrast is too low: ${contrast}`);
+   await page.screenshot({path:`test-results/theme-${file}.png`});
+  }
+  await page.getByRole('button',{name:'Yumuşak açık',exact:true}).click();
+  await page.getByRole('button',{name:'Kapat',exact:true}).click();
+  await page.waitForTimeout(350);
+  await expect(page.getByText('Tüm hesaplar',{exact:true})).toBeVisible();
+  const sidebarStyle=await page.locator('aside').evaluate(element=>{const style=getComputedStyle(element);const item=getComputedStyle(element.querySelector('button'));return {background:style.backgroundColor,color:style.color,opacity:style.opacity,itemBackground:item.backgroundColor,itemColor:item.color,itemOpacity:item.opacity}});
+  if(sidebarStyle.opacity==='0'||sidebarStyle.itemOpacity==='0'||sidebarStyle.color===sidebarStyle.background||sidebarStyle.itemColor===sidebarStyle.itemBackground)throw new Error(`Light theme sidebar contrast failure: ${JSON.stringify(sidebarStyle)}`);
+  await page.screenshot({path:'test-results/theme-light-mailbox.png'});
+  await page.getByTitle('Ayarlar',{exact:true}).click();
   await page.getByRole('button',{name:'Yapay Zekâ',exact:true}).click();
   await page.getByPlaceholder('API anahtarı').fill('fixture-api-key');
   await page.getByRole('button',{name:'Bağlantıyı test et'}).click();
@@ -84,7 +103,7 @@ const fs=require('node:fs');
   await page.keyboard.press('Escape');
   await page.screenshot({path:'test-results/settings.png'});
   if(errors.length)throw new Error(errors.join('\n'));
-  console.log('UI PASS: complete Tailwind styling, folder isolation, true pagination, page-size control, MIME sandbox, Escape, compose attachments, AI connection gate, labels, settings and language.');
+  console.log('UI PASS: complete styling, five accessible theme palettes, folder isolation, pagination, MIME sandbox, compose, AI gate, labels, settings and language.');
  } catch(error) { if(page) { console.error((await page.locator('body').innerText()).slice(0,5000)); fs.mkdirSync('test-results',{recursive:true}); await page.screenshot({path:'test-results/failure.png'}); } throw error; }
  finally {if(browser)await browser.close();child.kill();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

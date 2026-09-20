@@ -29,12 +29,11 @@ export const AccountSelectorBar: React.FC<AccountSelectorBarProps> = ({
   const { t } = useTranslation();
 
   const isOled = theme === 'oled';
-  const isDark = theme === 'dark' || isOled;
+  const isDark = theme !== 'light';
 
   const getBarBg = () => {
-    if (isOled) return 'bg-[#000000] text-zinc-200';
-    if (isDark) return 'bg-slate-950 text-slate-200';
-    return 'bg-white text-slate-800 shadow-xs';
+    if (isOled || isDark) return 'theme-panel theme-border';
+    return 'theme-panel theme-border shadow-xs';
   };
 
   const getPillBg = (isSelected: boolean) => {

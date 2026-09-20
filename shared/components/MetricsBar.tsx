@@ -24,7 +24,7 @@ export const MetricsBar: React.FC<MetricsBarProps> = ({
   const { t } = useTranslation();
 
   const isOled = theme === 'oled';
-  const isDark = theme === 'dark' || isOled;
+  const isDark = theme !== 'light';
 
   const safePercentage = stats.total > 0 ? Math.round((stats.safe / stats.total) * 100) : 0;
 

@@ -45,7 +45,7 @@ export const EmailReplyModal: React.FC<EmailReplyModalProps> = ({
   theme = 'light',
 }) => {
   const isOled = theme === 'oled';
-  const isDark = theme === 'dark' || isOled;
+  const isDark = theme !== 'light';
 
   const [toAddress, setToAddress] = useState('');
   const [subject, setSubject] = useState('');

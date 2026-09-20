@@ -30,16 +30,15 @@ export const BottomNavigationBar: React.FC<BottomNavigationBarProps> = ({
   const { t } = useTranslation();
 
   const isOled = theme === 'oled';
-  const isDark = theme === 'dark' || isOled;
+  const isDark = theme !== 'light';
 
   const getBarBg = () => {
-    if (isOled) return 'bg-[#000000]/95 text-zinc-100';
-    if (isDark) return 'bg-[#09090b]/95 text-zinc-300';
-    return 'bg-white/95 text-slate-800 shadow-sm';
+    if (isOled || isDark) return 'theme-panel theme-border';
+    return 'theme-panel theme-border shadow-sm';
   };
 
   return (
-    <div className={`md:hidden fixed bottom-0 left-0 right-0 z-40 backdrop-blur-md px-3 py-2 safe-area-bottom border-0 transition-colors ${getBarBg()}`}>
+    <div className={`md:hidden fixed bottom-0 left-0 right-0 z-40 backdrop-blur-md px-3 py-2 safe-area-bottom border-t transition-colors ${getBarBg()}`}>
       <div className="grid grid-cols-5 gap-1.5 max-w-md mx-auto">
         {/* Safe / Clean Inbox */}
         <button

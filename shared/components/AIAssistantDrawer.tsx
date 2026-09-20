@@ -53,7 +53,7 @@ export const AIAssistantDrawer: React.FC<AIAssistantDrawerProps> = ({
   theme = 'light',
 }) => {
   const isOled = theme === 'oled';
-  const isDark = theme === 'dark' || isOled;
+  const isDark = theme !== 'light';
 
   const [messages, setMessages] = useState<AssistantChatMessage[]>([
     {

@@ -33,7 +33,7 @@ export const AIActionModal: React.FC<AIActionModalProps> = ({
   if (!isOpen || !action) return null;
 
   const isOled = theme === 'oled';
-  const isDark = theme === 'dark' || isOled;
+  const isDark = theme !== 'light';
 
   // Editable draft reply state for Human-in-the-Loop review
   const [draftSubject, setDraftSubject] = useState(action.payload.replySubject || '');

@@ -2,6 +2,13 @@
 
 Sift Mail, Electron tabanlı çoklu hesap masaüstü e-posta istemcisidir. Gmail, Outlook, Apple, Yandex ve standart IMAP/SMTP hesaplarını; e-posta okumayı ve isteğe bağlı AI analizini tek uygulamada toplar.
 
+## 0.7.2 tema yenilemesi
+
+- Açık tema bej tondan çıkarılıp temiz, yumuşak ve nötr bir palete geçirildi.
+- Koyu, OLED, Okyanus ve Orman temalarının yüzey/metin renkleri yeniden dengelendi.
+- Tema seçimine görsel renk önizlemeleri ve temaya uygun varsayılan vurgu renkleri eklendi.
+- Beş temanın tamamına otomatik kontrast ve görsel regresyon testi eklendi.
+
 ## 0.7.1 düzeltmesi
 
 - Çoklu platform taşımasından sonra eksik üretilen Tailwind stil paketi düzeltildi.

@@ -55,7 +55,7 @@ export const CategoryFilterBar: React.FC<CategoryFilterBarProps> = ({
   const { t } = useTranslation();
 
   const isOled = theme === 'oled';
-  const isDark = theme === 'dark' || isOled;
+  const isDark = theme !== 'light';
 
   const getCategoryIcon = (catId: SafeCategory) => {
     switch (catId) {

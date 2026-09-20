@@ -78,7 +78,7 @@ export const DynamicEmailLoginCard: React.FC<DynamicEmailLoginCardProps> = ({
   }, [validationError, localError, errorMessage]);
 
   const isOled = theme === 'oled';
-  const isDark = theme === 'dark' || isOled;
+  const isDark = theme !== 'light';
 
   const cardBg = isOled
     ? 'bg-[#121212] border-white/10 text-zinc-100'

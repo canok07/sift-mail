@@ -36,10 +36,10 @@ export const Header: React.FC<HeaderProps> = ({
   const isDark = theme !== 'light';
 
   const headerBg = isOled
-    ? 'bg-[#000000] text-zinc-100 border-b border-white/10'
+    ? 'theme-panel border-b theme-border'
     : isDark
-    ? 'bg-[#111113] text-zinc-100 border-b border-white/10'
-    : 'bg-white text-zinc-800 border-b border-zinc-200/80';
+    ? 'theme-panel border-b theme-border'
+    : 'theme-panel border-b theme-border';
 
   const btnBg = isOled
     ? 'bg-zinc-900 hover:bg-zinc-800 text-zinc-300'
