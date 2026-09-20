@@ -459,6 +459,7 @@ export function getAiProvidersStatus(): Record<
 
   const anthropicVault = Boolean(getVaultSecret('anthropic_api_key'));
   const anthropicEnv = Boolean(process.env.ANTHROPIC_API_KEY);
+  const ollamaVault = Boolean(getVaultSecret('ollama_endpoint'));
 
   return {
     gemini: {
@@ -477,8 +478,8 @@ export function getAiProvidersStatus(): Record<
       defaultModel: 'claude-3-5-haiku-20241022',
     },
     ollama: {
-      configured: true,
-      source: 'env',
+      configured: ollamaVault,
+      source: ollamaVault ? 'vault' : 'none',
       defaultModel: 'llama3',
     },
   };

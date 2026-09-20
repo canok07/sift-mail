@@ -2,6 +2,18 @@
 
 Sift Mail, Electron tabanlı çoklu hesap masaüstü e-posta istemcisidir. Gmail, Outlook, Apple, Yandex ve standart IMAP/SMTP hesaplarını; e-posta okumayı ve isteğe bağlı AI analizini tek uygulamada toplar.
 
+## v17 — 0.7.0
+
+- **Doğrulanmış AI bağlantısı:** Gemini/OpenAI/Claude/Ollama bağlantı testi başarısızsa yapılandırma etkinleştirilemez. Test anahtarı test sırasında kaydedilmez; kullanıcı ayrıca onaylayıp güvenli kasaya kaydeder.
+- **Koşullu Sift Asistanı:** Doğrulanıp kaydedilmiş bir sağlayıcı yoksa asistan, toplu AI taraması ve AI yardım düğmeleri gösterilmez.
+- **Gerçek sayfalama:** Önceki/Sonraki sayfa geçişi, ileti aralığı ve 10/20/50/100 sayfa boyutu doğrudan ana posta ekranındadır.
+- **Kesin klasör ayrımı:** Gelen, Giden ve Spam yalnızca kendi `folderType` iletilerini gösterir; klasör değişiminde sayfa, seçim ve açık ileti durumu temizlenir.
+- **Yeni oluşturma ekranı:** Gönderen hesabı, Alıcı, Cc/Bcc, Konu, geniş mesaj alanı, dosya ekleri, biçim araçları ve mevcut bir iletiyi `.eml` olarak ekleme/iletme desteği.
+- **SMTP ekleri:** Cc, Bcc ve doğrulanmış boyut/sayı sınırlarıyla dosya ve RFC822 ileti ekleri sunucu gönderim hattına bağlandı.
+- **Gmail/Outlook uyarlaması:** Kompakt posta araç çubuğu, üstte ileti aralığı ve sayfa boyutu, masaüstü oluşturma penceresi ve aranabilir tam sayfa ayar navigasyonu Sift tasarımına uyarlandı.
+
+Ayrıntılar: [v17 değişiklik notları](DEGISIKLIKLER-v17.md).
+
 ## v16 — 0.6.0
 
 - **Hızlı açılış:** Hesap arayüze hemen eklenir; IMAP klasörleri ve son iletiler arka planda yüklenir.
@@ -59,11 +71,11 @@ HTML iletiler script çalıştırmayan ayrı bir iframe içinde gösterilir. Dı
 
 ## Test sonuçları
 
-v16 için şu kontroller tamamlandı:
+v17 için şu kontroller tamamlandı:
 
 - TypeScript: `npm run lint`
 - 19 güvenlik testi ve 4 posta/MIME testi: `npm test`
-- Chrome arayüz testi: arka plan senkronizasyonu, klasör ayrımı, sayfalama, MIME/script izolasyonu, ESC, yeni ileti, etiket, tam sayfa ayarlar ve dil geçişi
+- Chrome arayüz testi: klasör ayrımı, gerçek sayfalama, ana ekranda sayfa boyutu, MIME/script izolasyonu, ESC, `.eml` ekiyle gönderim, AI bağlantı kapısı, etiket, tam sayfa ayarlar ve dil geçişi
 - Paket testi: Electron çalışma ortamı, paketlenmiş sunucu bağımlılıkları, sağlık uç noktası ve ön yüz dosyaları
 
 Arayüz testini çalıştırmak için Chrome kurulu olmalıdır:

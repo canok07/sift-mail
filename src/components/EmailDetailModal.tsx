@@ -26,6 +26,7 @@ interface EmailDetailModalProps {
   onRequestTrash: (email: EmailMessage) => void;
   onMarkSafe: (email: EmailMessage) => void;
   onReply?: (email: EmailMessage) => void;
+  onForward?: (email: EmailMessage) => void;
   onUpdateCategory?: (emailId: string, category: SafeCategory) => void;
   onAddRule?: (rule: Omit<AutoRule, 'id' | 'createdAt' | 'matchCount'>) => void;
   onUnsubscribeAndPurge?: (email: EmailMessage) => void;
@@ -43,6 +44,7 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
   onRequestTrash,
   onMarkSafe,
   onReply,
+  onForward,
   onUpdateCategory,
   onAddRule,
   onUnsubscribeAndPurge,
@@ -442,6 +444,11 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
               >
                 <Send className="w-4 h-4" />
                 <span>Yanıtla</span>
+              </button>
+            )}
+            {onForward && (
+              <button onClick={()=>{onClose();onForward(email)}} className="inline-flex items-center gap-2 px-4 py-3 rounded-2xl bg-zinc-600 hover:bg-zinc-500 text-white text-xs font-bold transition-colors min-h-[48px] shadow-xs">
+                <ExternalLink className="w-4 h-4"/><span>İlet</span>
               </button>
             )}
             {onOpenAssistant && (

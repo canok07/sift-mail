@@ -22,6 +22,7 @@ interface FilterBarProps {
   onSyncEmails?: () => void;
   isSyncingEmails?: boolean;
   theme?: AppTheme;
+  aiEnabled?: boolean;
 }
 
 export const FilterBar: React.FC<FilterBarProps> = ({
@@ -36,6 +37,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   onSyncEmails,
   isSyncingEmails = false,
   theme = 'light',
+  aiEnabled = false,
 }) => {
   const {t}=useTranslation();
   const isOled = theme === 'oled';
@@ -124,7 +126,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         )}
 
         {/* AI ile Tara Butonu */}
-        <button
+        {aiEnabled&&<button
           onClick={onScanAll}
           disabled={isScanning}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white font-bold text-xs shadow-xs transition-all disabled:opacity-50"
@@ -132,7 +134,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         >
           <Sparkles className={`w-3.5 h-3.5 ${isScanning ? 'animate-spin text-emerald-400' : ''}`} />
           <span>{isScanning ? t('actions.scanning') : t('actions.scanAI')}</span>
-        </button>
+        </button>}
       </div>
     </div>
   );

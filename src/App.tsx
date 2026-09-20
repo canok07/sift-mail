@@ -48,6 +48,7 @@ import { AIActionModal } from './components/AIActionModal';
 import { AIAssistantDrawer } from './components/AIAssistantDrawer';
 import { EmailReplyModal } from './components/EmailReplyModal';
 import { ComposeModal } from './components/ComposeModal';
+import { safeFetchJson } from './services/apiClient';
 import { motion, AnimatePresence } from 'motion/react';
 import { useSettingsStore } from './stores/useSettingsStore';
 import { ProposedAIAction, generateSmartAIAction } from './services/ai/langchainTools';
@@ -69,6 +70,7 @@ import {
   Layers,
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
   Briefcase,
   CreditCard,
   ShoppingBag,
@@ -93,6 +95,9 @@ export default function App() {
     fontFamily,
     fontSize,
     pageSize,
+    aiEnabled,
+    setAIEnabled,
+    setAppearance,
   } = useSettingsStore();
 
   const handleThemeChange = (newTheme: AppTheme) => {
@@ -157,13 +162,19 @@ export default function App() {
   const [selectedEmailIds, setSelectedEmailIds] = useState<Set<string>>(new Set());
   const [detailEmail, setDetailEmail] = useState<EmailMessage | null>(null);
   const [isComposeOpen, setIsComposeOpen] = useState(false);
-  const [visibleCount, setVisibleCount] = useState<number>(pageSize);
+  const [composeForwardEmail, setComposeForwardEmail] = useState<EmailMessage | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
   const [activeLabel, setActiveLabel] = useState<string | null>(null);
   const [userLabels, setUserLabels] = useState<UserLabel[]>(() => {
     try { return JSON.parse(localStorage.getItem('sift_user_labels') || '[]'); } catch { return []; }
   });
 
-  useEffect(() => { setVisibleCount(pageSize); }, [pageSize, activeTab, activeAccountId, searchQuery, activeLabel]);
+  useEffect(() => { setCurrentPage(1); setSelectedEmailIds(new Set()); setDetailEmail(null); }, [pageSize, activeTab, activeAccountId, searchQuery, activeLabel]);
+  useEffect(() => {
+    let active=true;
+    safeFetchJson<any>('/api/ai/providers-status').then(data=>{if(active)setAIEnabled(Boolean(aiEnabled&&data.providers?.[aiProvider]?.configured))}).catch(()=>{if(active)setAIEnabled(false)});
+    return()=>{active=false};
+  },[aiProvider,aiEnabled,setAIEnabled]);
   useEffect(() => { localStorage.setItem('sift_user_labels', JSON.stringify(userLabels)); }, [userLabels]);
   const knownContacts = useMemo(() => Array.from(new Set(emails.flatMap(email => [email.fromEmail || '', ...(email.to || [])]).filter(Boolean))).sort(), [emails]);
 
@@ -186,11 +197,12 @@ export default function App() {
   const [replyModalDraft, setReplyModalDraft] = useState<string>('');
 
   const handleOpenAssistant = useCallback((email?: EmailMessage) => {
+    if (!aiEnabled) { setIsSettingsModalOpen(true); setToast({type:'info',message:'Önce Ayarlar → Yapay Zekâ bölümünden çalışan bir model bağlayın.'}); return; }
     if (email) {
       setSelectedAssistantEmail(email);
     }
     setIsAssistantOpen(true);
-  }, []);
+  }, [aiEnabled]);
 
   const handleSelectEmailForReply = useCallback((email: EmailMessage, initialDraft?: string) => {
     setReplyModalEmail(email);
@@ -996,9 +1008,9 @@ export default function App() {
 
       if (activeLabel && !email.labels?.includes(`user:${activeLabel}`)) return false;
 
-      // Tab filter
-      if (['inbox', 'sent', 'drafts', 'trash', 'archive'].includes(activeTab)) return email.folderType === activeTab;
-      if (activeTab === 'threats') return email.folderType === 'spam';
+      // Klasörler kesin olarak ayrılır; önceki klasörün iletileri asla yeni görünüme sızmaz.
+      const strictFolder: Partial<Record<FilterTab, string>> = { inbox:'inbox', sent:'sent', drafts:'drafts', trash:'trash', archive:'archive', threats:'spam' };
+      if (strictFolder[activeTab]) return email.folderType === strictFolder[activeTab];
       if (activeTab !== 'all' && email.folderType !== 'inbox') return false;
       if (activeTab === 'safe_only') {
         const isSafe =
@@ -1027,7 +1039,9 @@ export default function App() {
     }).sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
   }, [emails, activeAccountId, activeTab, searchQuery, selectedCategory, activeLabel]);
 
-  const paginatedEmails = useMemo(() => filteredEmails.slice(0, visibleCount), [filteredEmails, visibleCount]);
+  const totalPages = Math.max(1, Math.ceil(filteredEmails.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedEmails = useMemo(() => filteredEmails.slice((safeCurrentPage-1)*pageSize, safeCurrentPage*pageSize), [filteredEmails, safeCurrentPage, pageSize]);
   const dateGroupedEmails = useMemo(() => {
     const now = new Date();
     const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -1071,6 +1085,13 @@ export default function App() {
     } catch (err: any) { setSyncError(err.message); showToast(err.message, 'error'); }
     finally { setIsSyncingEmails(false); }
   };
+  const handleNextPage = async () => {
+    if (safeCurrentPage < totalPages) { setCurrentPage(safeCurrentPage + 1); return; }
+    if (folderLoaded < folderTotal) { await handleLoadMore(); setCurrentPage(safeCurrentPage + 1); }
+  };
+  const handleFolderChange = (tab: FilterTab) => {
+    setActiveLabel(null); setActiveTab(tab); setCurrentPage(1); setSelectedEmailIds(new Set()); setDetailEmail(null);
+  };
 
   const handleDeselectAll = () => {
     setSelectedEmailIds(new Set());
@@ -1088,14 +1109,14 @@ export default function App() {
       { category: 'other', emails: [] },
     ];
 
-    for (const email of filteredEmails) {
+    for (const email of paginatedEmails) {
       const cat = email.safeCategory || 'other';
       const target = groups.find((g) => g.category === cat) || groups[groups.length - 1];
       target.emails.push(email);
     }
 
     return groups.filter((g) => g.emails.length > 0 || selectedCategory === g.category);
-  }, [filteredEmails, selectedCategory]);
+  }, [paginatedEmails, selectedCategory]);
 
   const getCategoryIcon = (catId: SafeCategory) => {
     switch (catId) {
@@ -1162,7 +1183,7 @@ export default function App() {
         onRefresh={handleSyncEmails}
         isLoading={isLoading || isSyncingEmails}
         onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
-        onCompose={() => setIsComposeOpen(true)}
+        onCompose={() => { setComposeForwardEmail(null); setIsComposeOpen(true); }}
         theme={theme}
       />
 
@@ -1175,7 +1196,7 @@ export default function App() {
           onSelectAccount={setActiveAccountId}
           onRemoveAccount={handleRequestRemoveAccount}
           activeTab={activeTab}
-          onTabChange={(tab) => setActiveTab(tab)}
+          onTabChange={handleFolderChange}
           selectedCategory={selectedCategory}
           onSelectCategory={setSelectedCategory}
           stats={stats}
@@ -1185,9 +1206,10 @@ export default function App() {
           isCategorizing={isCategorizing}
           activeRulesCount={autoRules.filter((r) => r.isActive).length}
           onToggleAssistant={() => setIsAssistantOpen((prev) => !prev)}
+          aiEnabled={aiEnabled}
           isAssistantOpen={isAssistantOpen}
           theme={theme}
-          onCompose={() => setIsComposeOpen(true)}
+          onCompose={() => { setComposeForwardEmail(null); setIsComposeOpen(true); }}
           labels={userLabels}
           activeLabel={activeLabel}
           onSelectLabel={(id) => { setActiveLabel(id); if (id) setActiveTab('all'); }}
@@ -1211,9 +1233,9 @@ export default function App() {
           ) : (
             <>
               {syncError && <p role="alert" className="text-sm text-rose-500">{syncError}</p>}
-              <div className="flex items-center justify-between text-sm text-zinc-500">
+              <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-zinc-500 rounded-xl bg-zinc-500/[.06] px-3 py-2">
                 <span>{['inbox','sent','threats'].includes(activeTab) ? t('actions.loadedCount',{loaded:folderLoaded,total:folderTotal}) : t('actions.loaded',{count:filteredEmails.length})}</span>
-                {folderLoaded < folderTotal && <button disabled={isSyncingEmails} onClick={handleLoadMore} className="px-3 py-2 rounded-lg bg-emerald-500/10 text-emerald-500 disabled:opacity-50">{isSyncingEmails ? t('actions.loading') : t('actions.loadMore')}</button>}
+                <div className="flex items-center gap-2"><label className="text-xs">Sayfa başına <select aria-label="Sayfa başına mail" value={pageSize} onChange={e=>setAppearance({pageSize:Number(e.target.value) as 10|20|50|100})} className="ml-1 rounded-lg bg-zinc-500/10 px-2 py-1.5">{[10,20,50,100].map(n=><option key={n} value={n}>{n}</option>)}</select></label><span className="text-xs opacity-60">{filteredEmails.length?`${(safeCurrentPage-1)*pageSize+1}–${Math.min(safeCurrentPage*pageSize,filteredEmails.length)} / ${Math.max(filteredEmails.length,folderTotal)}`:'0'}</span></div>
               </div>
               {/* Action Toolbar */}
               <FilterBar
@@ -1228,6 +1250,7 @@ export default function App() {
                 onSyncEmails={handleSyncEmails}
                 isSyncingEmails={isSyncingEmails}
                 theme={theme}
+                aiEnabled={aiEnabled}
               />
 
               {/* Email Cards List */}
@@ -1345,7 +1368,7 @@ export default function App() {
                             onUpdateCategory={handleUpdateCategory}
                             onMarkSafeArchive={handleMarkSafeArchive}
                             onUnsubscribeAndPurge={handleUnsubscribeAndPurge}
-                            onOpenAssistant={handleOpenAssistant}
+                            onOpenAssistant={aiEnabled?handleOpenAssistant:undefined}
                             theme={theme}
                           />
                         ))}
@@ -1357,9 +1380,10 @@ export default function App() {
             </div>
           ) : (
             /* FLAT LIST VIEW */
-            <div className="space-y-6">{dateGroupedEmails.map(group=><section key={group.key}><h2 className="sticky top-0 z-10 py-2 px-1 text-xs font-bold uppercase tracking-widest opacity-55 backdrop-blur">{group.title}</h2><div className="space-y-2">{group.emails.map(email=><EmailCard key={email.id} email={email} isSelected={selectedEmailIds.has(email.id)} onToggleSelect={handleToggleSelect} onOpenDetail={(item)=>setDetailEmail(item)} onAnalyze={handleAnalyzeEmail} onUnsubscribe={handleUnsubscribe} onRequestTrash={handleRequestTrash} onReply={handleReplyEmail} onUpdateCategory={handleUpdateCategory} onMarkSafeArchive={handleMarkSafeArchive} onUnsubscribeAndPurge={handleUnsubscribeAndPurge} onOpenAssistant={handleOpenAssistant} theme={theme}/>)}</div></section>)}{visibleCount<filteredEmails.length&&<button onClick={()=>setVisibleCount(v=>v+pageSize)} className="w-full py-3 rounded-xl bg-zinc-500/10 text-sm">{t('actions.showMore')}</button>}</div>
+            <div className="space-y-6">{dateGroupedEmails.map(group=><section key={group.key}><h2 className="sticky top-0 z-10 py-2 px-1 text-xs font-bold uppercase tracking-widest opacity-55 backdrop-blur">{group.title}</h2><div className="space-y-2">{group.emails.map(email=><EmailCard key={email.id} email={email} isSelected={selectedEmailIds.has(email.id)} onToggleSelect={handleToggleSelect} onOpenDetail={(item)=>setDetailEmail(item)} onAnalyze={handleAnalyzeEmail} onUnsubscribe={handleUnsubscribe} onRequestTrash={handleRequestTrash} onReply={handleReplyEmail} onUpdateCategory={handleUpdateCategory} onMarkSafeArchive={handleMarkSafeArchive} onUnsubscribeAndPurge={handleUnsubscribeAndPurge} onOpenAssistant={aiEnabled?handleOpenAssistant:undefined} theme={theme}/>)}</div></section>)}</div>
           )}
         </div>
+        {filteredEmails.length>0&&<div className="flex items-center justify-center gap-3 py-4"><button aria-label="Önceki Sayfa" disabled={safeCurrentPage<=1||isSyncingEmails} onClick={()=>setCurrentPage(Math.max(1,safeCurrentPage-1))} className="inline-flex items-center gap-2 rounded-xl bg-zinc-500/10 px-4 py-2 text-sm disabled:opacity-35"><ChevronLeft size={16}/>Önceki Sayfa</button><span className="text-xs opacity-60">{safeCurrentPage} / {Math.max(totalPages,folderLoaded<folderTotal?safeCurrentPage+1:totalPages)}</span><button aria-label="Sonraki Sayfa" disabled={(safeCurrentPage>=totalPages&&folderLoaded>=folderTotal)||isSyncingEmails} onClick={()=>void handleNextPage()} className="inline-flex items-center gap-2 rounded-xl bg-zinc-500/10 px-4 py-2 text-sm disabled:opacity-35">Sonraki Sayfa<ChevronRight size={16}/></button></div>}
         </>
       )}
       </main>
@@ -1374,10 +1398,11 @@ export default function App() {
         onRequestTrash={handleRequestTrash}
         onMarkSafe={handleMarkSafe}
         onReply={handleReplyEmail}
+        onForward={(email)=>{setComposeForwardEmail(email);setIsComposeOpen(true)}}
         onUpdateCategory={handleUpdateCategory}
         onAddRule={handleAddRule}
         onUnsubscribeAndPurge={handleUnsubscribeAndPurge}
-        onOpenAssistant={handleOpenAssistant}
+        onOpenAssistant={aiEnabled?handleOpenAssistant:undefined}
         theme={theme}
         userLabels={userLabels}
         onToggleLabel={(emailId,labelId)=>setEmails(prev=>prev.map(email=>email.id!==emailId?email:{...email,labels:email.labels?.includes(`user:${labelId}`)?email.labels.filter(x=>x!==`user:${labelId}`):[...(email.labels||[]),`user:${labelId}`]}))}
@@ -1455,6 +1480,7 @@ export default function App() {
         onOpenVaultModal={() => setIsVaultModalOpen(true)}
         onOpenDesktopModal={() => setIsDesktopModalOpen(true)}
         onOpenLoginModal={() => setIsLoginModalOpen(true)}
+        onAIStatusChange={setAIEnabled}
       />
 
       {/* Dynamic In-Memory IMAP Connection Modal */}
@@ -1490,7 +1516,7 @@ export default function App() {
       {/* Mobile Bottom Navigation Bar (md:hidden) */}
       <BottomNavigationBar
         activeTab={activeTab}
-        onSelectTab={(tab) => setActiveTab(tab)}
+        onSelectTab={handleFolderChange}
         stats={stats}
         onOpenAccounts={() => setIsMultiAccountModalOpen(true)}
         onOpenVault={() => setIsVaultModalOpen(true)}
@@ -1498,7 +1524,7 @@ export default function App() {
       />
 
       {/* Floating AI Assistant Trigger Button (Bottom Right) */}
-      {!isAssistantOpen && (
+      {aiEnabled && !isAssistantOpen && (
         <motion.button
           id="floating-ai-assistant-btn"
           initial={{ scale: 0, opacity: 0 }}
@@ -1516,7 +1542,7 @@ export default function App() {
 
       {/* Sift AI Assistant Side Drawer */}
       <AnimatePresence>
-        {isAssistantOpen && (
+        {aiEnabled && isAssistantOpen && (
           <AIAssistantDrawer
             isOpen={isAssistantOpen}
             onClose={() => setIsAssistantOpen(false)}
@@ -1535,6 +1561,8 @@ export default function App() {
         contacts={knownContacts}
         credentials={credentialsByAccount}
         theme={theme}
+        availableEmails={emails}
+        initialForward={composeForwardEmail}
         onSent={({to,subject,body,accountId}) => {
           const account=accounts.find(a=>a.id===accountId);
           setEmails(prev=>[{id:`sent-${Date.now()}`,accountId,provider:account?.provider,from:account?.email||'',fromEmail:account?.email||'',to:[to],subject,date:new Date().toISOString(),snippet:body.slice(0,160),bodyText:body,isRead:true,folder:'Sent',folderType:'sent',labels:['SENT']},...prev]);

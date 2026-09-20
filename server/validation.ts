@@ -81,11 +81,19 @@ export const SmtpSendSchema = z
     smtp: SmtpConnectSchema.optional(),
     mail: z.object({
       to: z.string().trim().min(1, 'Alıcı e-posta adresi zorunludur.').max(500),
+      cc: z.string().trim().max(500).optional(),
+      bcc: z.string().trim().max(500).optional(),
       subject: z.string().trim().min(1, 'Konu başlığı boş olamaz.').max(500),
       text: z.string().min(1, 'Mesaj içeriği boş olamaz.').max(200000),
       html: z.string().max(500000).optional(),
       replyTo: z.string().trim().max(500).optional(),
       inReplyTo: z.string().trim().max(500).optional(),
+      attachments: z.array(z.object({
+        filename: z.string().trim().min(1).max(255),
+        content: z.string().min(1).max(40_000_000),
+        encoding: z.literal('base64').optional(),
+        contentType: z.string().trim().max(200).optional(),
+      })).max(20).optional(),
     }),
   })
   .refine((data) => Boolean(data.config || data.smtp), {

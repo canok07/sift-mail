@@ -510,11 +510,14 @@ export async function sendSmtpMessage(
   options: SmtpConnectOptions,
   mail: {
     to: string;
+    cc?: string;
+    bcc?: string;
     subject: string;
     text: string;
     html?: string;
     replyTo?: string;
     inReplyTo?: string;
+    attachments?: Array<{ filename: string; content: string; encoding?: 'base64'; contentType?: string }>;
   }
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   const authConfig: any = options.auth.accessToken
@@ -540,11 +543,14 @@ export async function sendSmtpMessage(
     const info = await transporter.sendMail({
       from: options.auth.user,
       to: mail.to,
+      cc: mail.cc,
+      bcc: mail.bcc,
       subject: mail.subject,
       text: mail.text,
       html: mail.html,
       replyTo: mail.replyTo,
       inReplyTo: mail.inReplyTo,
+      attachments: mail.attachments,
     });
     return { success: true, messageId: info.messageId };
   } catch (err: any) {

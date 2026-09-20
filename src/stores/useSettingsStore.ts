@@ -12,6 +12,7 @@ export interface SettingsState {
   requireBiometric: boolean;
   autoDeleteUnsubscribed: boolean;
   aiProvider: AIProvider;
+  aiEnabled: boolean;
   ollamaEndpoint: string;
   telegramBotToken: string;
   telegramChatId: string;
@@ -29,6 +30,7 @@ export interface SettingsState {
   setRequireBiometric: (enabled: boolean) => void;
   setAutoDeleteUnsubscribed: (enabled: boolean) => void;
   setAIProvider: (provider: AIProvider) => void;
+  setAIEnabled: (enabled: boolean) => void;
   setOllamaEndpoint: (endpoint: string) => void;
   setTelegramConfig: (config: { botToken?: string; chatId?: string; enabled?: boolean }) => void;
   setAppearance: (appearance: Partial<Pick<SettingsState, 'accentColor' | 'backgroundImage' | 'fontFamily' | 'fontSize' | 'pageSize'>>) => void;
@@ -50,6 +52,7 @@ const DEFAULT_SETTINGS = {
   requireBiometric: false,
   autoDeleteUnsubscribed: false,
   aiProvider: 'gemini' as AIProvider,
+  aiEnabled: false,
   ollamaEndpoint: 'http://localhost:11434',
   telegramBotToken: '',
   telegramChatId: '',
@@ -72,6 +75,7 @@ export const useSettingsStore = create<SettingsState>()(
       setRequireBiometric: (requireBiometric) => set({ requireBiometric }),
       setAutoDeleteUnsubscribed: (autoDeleteUnsubscribed) => set({ autoDeleteUnsubscribed }),
       setAIProvider: (aiProvider) => set({ aiProvider }),
+      setAIEnabled: (aiEnabled) => set({ aiEnabled }),
       setOllamaEndpoint: (ollamaEndpoint) => set({ ollamaEndpoint }),
       setTelegramConfig: (config) =>
         set((state) => ({

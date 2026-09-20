@@ -2,7 +2,7 @@
   "name": "sift-mail",
   "private": true,
   "description": "Sift Mail multi-account desktop email client",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
