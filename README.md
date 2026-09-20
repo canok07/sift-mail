@@ -2,6 +2,12 @@
 
 Sift Mail, Electron tabanlı çoklu hesap masaüstü e-posta istemcisidir. Gmail, Outlook, Apple, Yandex ve standart IMAP/SMTP hesaplarını; e-posta okumayı ve isteğe bağlı AI analizini tek uygulamada toplar.
 
+## 0.7.1 düzeltmesi
+
+- Çoklu platform taşımasından sonra eksik üretilen Tailwind stil paketi düzeltildi.
+- Web/mobil derlemenin paketlenmiş yerel sunucuyu silmesi engellendi.
+- Tam stil paketini doğrulayan arayüz regresyon testi eklendi.
+
 ## v17 — 0.7.0
 
 - **Doğrulanmış AI bağlantısı:** Gemini/OpenAI/Claude/Ollama bağlantı testi başarısızsa yapılandırma etkinleştirilemez. Test anahtarı test sırasında kaydedilmez; kullanıcı ayrıca onaylayıp güvenli kasaya kaydeder.

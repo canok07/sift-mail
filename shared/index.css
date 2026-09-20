@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import "tailwindcss" source(".");
 
 :root {
   --bg-canvas: #e9e4da;

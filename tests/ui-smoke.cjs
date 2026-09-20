@@ -22,6 +22,8 @@ const fs=require('node:fs');
    await route.fulfill({json:{success:true,messages:body.offset?[]:[...inbox,make('sent','sent'),make('spam','spam')],mailboxes:[{path:'INBOX',type:'inbox',name:'INBOX',totalMessages:12},{path:'sent',type:'sent',name:'Sent',totalMessages:1},{path:'spam',type:'spam',name:'Spam',totalMessages:1}],account:{email:body.email,provider:'gmail'}}});
   });
   await page.goto('http://127.0.0.1:47835');
+  const stylesheetSizes=await page.locator('link[rel="stylesheet"]').evaluateAll(async links=>Promise.all(links.map(async link=>(await fetch(link.href)).text().then(css=>css.length))));
+  if(!stylesheetSizes.some(size=>size>50000))throw new Error('Tailwind utility stylesheet is missing or incomplete');
   await page.locator('input[type=email]').fill('fixture@gmail.com');
   await page.locator('input[type=password]').fill('abcdefghijklmnop');
   await page.getByRole('button',{name:'Oturum Aç ve Mailleri Senkronize Et'}).click();
@@ -82,7 +84,7 @@ const fs=require('node:fs');
   await page.keyboard.press('Escape');
   await page.screenshot({path:'test-results/settings.png'});
   if(errors.length)throw new Error(errors.join('\n'));
-  console.log('UI PASS: folder isolation, true pagination, page-size control, MIME sandbox, Escape, compose attachments, AI connection gate, labels, settings and language.');
+  console.log('UI PASS: complete Tailwind styling, folder isolation, true pagination, page-size control, MIME sandbox, Escape, compose attachments, AI connection gate, labels, settings and language.');
  } catch(error) { if(page) { console.error((await page.locator('body').innerText()).slice(0,5000)); fs.mkdirSync('test-results',{recursive:true}); await page.screenshot({path:'test-results/failure.png'}); } throw error; }
  finally {if(browser)await browser.close();child.kill();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

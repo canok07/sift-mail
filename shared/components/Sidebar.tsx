@@ -42,6 +42,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ accounts = [], activeAccountId
       {labels.length===0?<p className="px-3 text-xs opacity-45">{t('labels.empty')}</p>:labels.map(label=><div key={label.id} className={`group flex items-center rounded-lg ${activeLabel===label.id?'bg-emerald-500/15':''}`}><button onClick={()=>onSelectLabel?.(label.id)} className="flex-1 flex items-center gap-2 px-3 py-2 text-xs"><Tag size={14} style={{color:label.color}}/><span className="truncate">{label.name}</span></button><button onClick={()=>onDeleteLabel?.(label.id)} className="p-2 opacity-0 group-hover:opacity-50"><X size={13}/></button></div>)}
     </div>
     {aiEnabled&&<button onClick={onToggleAssistant} className="flex items-center gap-2 px-3 py-2 text-xs opacity-60 hover:opacity-100"><Sparkles size={15}/>{t('ai.assistant')}</button>}
-    <p className="px-3 mt-3 text-[10px] opacity-40">Sift Mail · 0.7.0</p>
+    <p className="px-3 mt-3 text-[10px] opacity-40">Sift Mail · 0.7.1</p>
   </aside>;
 };

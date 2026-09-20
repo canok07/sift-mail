@@ -105,7 +105,9 @@ export default defineConfig(() => {
     },
     build: {
       outDir: path.resolve(__dirname, '../../dist'),
-      emptyOutDir: true,
+      // dist also contains the bundled API server. A standalone web/mobile
+      // rebuild must not delete dist/server.cjs.
+      emptyOutDir: false,
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.

@@ -2,7 +2,7 @@
   "name": "sift-mail",
   "private": true,
   "description": "Sift Mail multi-account desktop email client",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "type": "module",
   "main": "apps/desktop/electron/main.cjs",
   "scripts": {
@@ -10,7 +10,7 @@
     "dev:web": "tsx core/server.ts",
     "dev:desktop": "npm run build && electron .",
     "dev:mobile": "npm run build:web && node scripts/run-capacitor.cjs run android",
-    "build": "npm run build:web && npm run build:server",
+    "build": "npm run clean && npm run build:web && npm run build:server",
     "build:web": "vite build --config apps/web/vite.config.ts",
     "build:server": "esbuild core/server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
