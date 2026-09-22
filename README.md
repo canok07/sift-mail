@@ -1,162 +1,133 @@
 # Sift Mail
 
-Sift Mail, Electron tabanlı çoklu hesap masaüstü e-posta istemcisidir. Gmail, Outlook, Apple, Yandex ve standart IMAP/SMTP hesaplarını; e-posta okumayı ve isteğe bağlı AI analizini tek uygulamada toplar.
+## English
 
-## 0.7.3 toplu iyileştirme / cumulative improvements
+Sift Mail is a privacy-focused, multi-account email client for Gmail, Outlook, Apple Mail, Yandex, and standard IMAP/SMTP providers. Core mail features work without AI; optional AI providers can assist with summaries, classification, and reply drafts.
 
-**Türkçe**
+### Download
 
-- Mail okuma alanındaki kalan eski bej renk kaldırıldı; HTML ve düz metin içeriği beş temanın kendi paletine bağlandı.
-- Yeni mail, mail ayrıntısı ve otomatik kural pencereleri Açık, Koyu, OLED, Okyanus ve Orman temalarıyla tutarlı hâle getirildi.
-- Yeni mail araçlarının, güvenli içerik uyarılarının ve sayfalama denetimlerinin Türkçe, İngilizce ve Almanca çevirileri tamamlandı.
-- Tema, güvenlik, klasör ayrımı, eklenti sistemi, üretim paketi ve Windows açılış kontrolleri genişletildi.
+[Download Sift Mail 0.7.3 for Windows](https://github.com/canok07/sift-mail/releases/download/v0.7.3/Sift-Mail-Setup-0.7.3.exe)
 
-**English**
+### Features
 
-- Removed the remaining legacy beige email-body color; protected HTML and plain-text content now use each of the five theme palettes.
-- Made compose, message detail, and automatic-rule dialogs consistent across Light, Dark, OLED, Ocean, and Forest themes.
-- Completed Turkish, English, and German translations for compose tools, protected-content notices, and pagination controls.
-- Expanded checks for themes, security, folder isolation, plugins, production packaging, and Windows startup.
+- Multiple email accounts in one interface
+- Separate Inbox, Sent, and Spam folders
+- Background synchronization, search, labels, date groups, and pagination
+- Compose, reply, forward, attachments, and recipient suggestions
+- Protected HTML email rendering with remote images and tracking pixels blocked
+- Light, Dark, OLED, Ocean, and Forest themes
+- English, Turkish, and German interface languages
+- Optional Gemini, OpenAI, Claude, and Ollama integrations
+- Optional plugin system with failure isolation and constrained permissions
 
-## 0.7.2 tema yenilemesi
+### Account setup
 
-- Açık tema bej tondan çıkarılıp temiz, yumuşak ve nötr bir palete geçirildi.
-- Koyu, OLED, Okyanus ve Orman temalarının yüzey/metin renkleri yeniden dengelendi.
-- Tema seçimine görsel renk önizlemeleri ve temaya uygun varsayılan vurgu renkleri eklendi.
-- Beş temanın tamamına otomatik kontrast ve görsel regresyon testi eklendi.
+- **Gmail:** use a Google app password for IMAP/SMTP.
+- **Outlook / Hotmail:** Microsoft OAuth with PKCE is supported when `MICROSOFT_CLIENT_ID` is configured.
+- **Apple Mail:** use an Apple app-specific password.
+- **Yandex and other providers:** use an app password or manual IMAP/SMTP settings where required.
 
-## 0.7.1 düzeltmesi
+Passwords and API keys must never be committed to the repository. Copy [.env.example](.env.example) for local configuration. Email content is displayed in a sandboxed frame, and optional cloud AI access is disabled until explicitly configured.
 
-- Çoklu platform taşımasından sonra eksik üretilen Tailwind stil paketi düzeltildi.
-- Web/mobil derlemenin paketlenmiş yerel sunucuyu silmesi engellendi.
-- Tam stil paketini doğrulayan arayüz regresyon testi eklendi.
+### Development
 
-## v17 — 0.7.0
-
-- **Doğrulanmış AI bağlantısı:** Gemini/OpenAI/Claude/Ollama bağlantı testi başarısızsa yapılandırma etkinleştirilemez. Test anahtarı test sırasında kaydedilmez; kullanıcı ayrıca onaylayıp güvenli kasaya kaydeder.
-- **Koşullu Sift Asistanı:** Doğrulanıp kaydedilmiş bir sağlayıcı yoksa asistan, toplu AI taraması ve AI yardım düğmeleri gösterilmez.
-- **Gerçek sayfalama:** Önceki/Sonraki sayfa geçişi, ileti aralığı ve 10/20/50/100 sayfa boyutu doğrudan ana posta ekranındadır.
-- **Kesin klasör ayrımı:** Gelen, Giden ve Spam yalnızca kendi `folderType` iletilerini gösterir; klasör değişiminde sayfa, seçim ve açık ileti durumu temizlenir.
-- **Yeni oluşturma ekranı:** Gönderen hesabı, Alıcı, Cc/Bcc, Konu, geniş mesaj alanı, dosya ekleri, biçim araçları ve mevcut bir iletiyi `.eml` olarak ekleme/iletme desteği.
-- **SMTP ekleri:** Cc, Bcc ve doğrulanmış boyut/sayı sınırlarıyla dosya ve RFC822 ileti ekleri sunucu gönderim hattına bağlandı.
-- **Gmail/Outlook uyarlaması:** Kompakt posta araç çubuğu, üstte ileti aralığı ve sayfa boyutu, masaüstü oluşturma penceresi ve aranabilir tam sayfa ayar navigasyonu Sift tasarımına uyarlandı.
-
-Ayrıntılar: [v17 değişiklik notları](DEGISIKLIKLER-v17.md).
-
-## v16 — 0.6.0
-
-- **Hızlı açılış:** Hesap arayüze hemen eklenir; IMAP klasörleri ve son iletiler arka planda yüklenir.
-- **Çoklu hesap:** Hesaplar sol menüde ayrı görünür; Tüm İletiler, Gelen, Giden ve Spam hesap bazında veya birleşik kullanılabilir.
-- **Tarih ve sayfalama:** İletiler tarihe göre sıralanır, Bugün / Bu Hafta / Bu Ay / Daha Eski gruplarına ayrılır; 10/20/50/100 görünür ileti seçilebilir.
-- **Okuma deneyimi:** ESC ile kapanan ileti görünümü ve aktif temaya uyan korumalı HTML/salt metin arka planı.
-- **Oluştur ve kişiler:** Sıfırdan ileti oluşturma, hesap seçme ve daha önceki gönderen/alıcı adreslerinden otomatik öneri.
-- **Etiketler:** Kullanıcı etiketi oluşturma, silme, iletiye uygulama ve etiketle filtreleme.
-- **Tam sayfa Ayarlar:** Genel, Arayüz, Yapay Zekâ, Yardım ve Hakkında sayfaları; tema, özel renk, arka plan, yazı tipi/boyutu ve ileti sayısı ayarları.
-- **Dil:** Yeni temel ekranlar Türkçe, Almanca ve İngilizce çeviri sistemine bağlandı.
-- **Sağlayıcılar:** Microsoft OAuth/PKCE ve Gmail, Yandex, Apple ile standart IMAP uygulama parolası akışları; manuel kurumsal IMAP/SMTP seçeneği.
-- **Kimlik:** Sift Mail adı, 0.6.0 paket kimliği ve Windows/PWA için yeni özgün uygulama ikonu.
-
-- **Klasör ayrımı:** Gelen Kutusu, Gönderilenler ve Spam ayrı menülerde açılır. Gönderilen iletiler gelen kutusuna karışmaz.
-- **Doğru ileti içeriği:** MIME, quoted-printable ve base64 içerikleri çözülür. Türkçe/Almanca karakterler ve tam metin korunur; yalnızca liste önizlemesi kısaltılır.
-- **Tarih sıralaması:** İletiler klasörlerin çekilme sırasına göre değil, ileti tarihine göre sıralanır.
-- **Sayfalama:** İlk senkronizasyonda klasör başına en yeni 100 ileti yüklenir. Yüklenen/toplam sayacı ve “Daha fazla yükle” düğmesi eski iletilere erişim sağlar.
-- **Açık hata bildirimi:** Klasör okuma hatası boş klasör gibi gösterilmez.
-- **Sade arayüz:** Liste kartları küçültüldü. Ayrıntılı AI analizi ve gelişmiş işlemler açılır bölüme taşındı.
-- **İsteğe bağlı Telegram:** Bağlantı alanı kapalı bir ayrıntı bölümündedir. “Son 3 saatteki spam mailleri temizle” komut simülatörü kaldırıldı.
-- **Otomatik temizlik:** Abonelikten çıkınca geçmişi otomatik temizleme davranışı kaldırıldı.
-- **Masaüstü başlangıcı:** Electron, yerel sunucu hazır olduğunda arayüzü açar. HTML içeren geçerli JSON yanıtlarının yanlışlıkla hata sayılması düzeltildi.
-- **Hesaplar:** Hesap bağlama gerçek senkronizasyonu bekler; başka hesaba ait yüklenmiş iletiler korunur.
-
-Ayrıntılar: [v16 değişiklik notları](DEGISIKLIKLER-v16.md).
-
-## Çalıştırma
-
-Kod tabanı platformlar arasında ortak bir yapı kullanır:
-
-- `core/`: posta motoru, sağlayıcılar, senkronizasyon, kurallar, AI, eklentiler ve güvenlik
-- `shared/`: ortak React arayüzü, tipler ve API istemcileri
-- `apps/desktop/`: Electron ile Windows, macOS ve Linux masaüstü girişi
-- `apps/web/`: Vite web/PWA girişi
-- `apps/mobile/`: Capacitor ile Android ve iOS yapılandırması
-
-Platform komutları:
-
-```powershell
-# Web (API + arayüz geliştirme sunucusu)
-npm run dev:web
-npm run build:web
-
-# Masaüstü (ortak üretim derlemesini hazırlar ve Electron'u açar)
-npm run dev:desktop
-npm run build:win       # Windows
-npm run build:mac       # macOS üzerinde
-npm run build:linux     # Linux üzerinde
-
-# Mobil (Android SDK/Xcode ve Capacitor platform projesi gerekir)
-npm run build:mobile       # Android ve iOS projelerini senkronize eder
-npm run dev:mobile
-npm run build:android
-npm run build:ios       # macOS üzerinde
-
-# Tüm ortak kontroller
-npm run lint
-npm test
-npm run build
-```
-
-`npm run dev` web geliştirme komutunun kısa adıdır. Android ve iOS yerel projeleri `apps/mobile/` altında tutulur; platforma özel dosyalar bu alanın dışına taşmaz.
-
-Hazır taşınabilir paket kullanıyorsanız ZIP’in tamamını bir klasöre çıkarın ve içindeki `Sift.exe` dosyasını açın. `resources` klasörü ve diğer dosyalar EXE’nin yanında kalmalıdır. Eski Sift sürümünü önce kapatın.
-
-Kaynak koddan çalıştırmak için Node.js ve npm gerekir:
+Requires Node.js and npm.
 
 ```powershell
 npm ci
-npm run dev
-```
-
-Windows paketi oluşturmak için `Sift-Olustur.cmd` dosyasını çalıştırın. Bu dosya bağımlılıkları kurar, TypeScript kontrolünü ve testleri çalıştırır, ardından Windows paketini üretir. Çıktı `release/` klasöründedir.
-
-Elle derleme:
-
-```powershell
+npm run dev          # Web development
+npm run dev:desktop  # Desktop development
 npm run lint
 npm test
-npm run build:win
-```
-
-## Hesaplar ve AI bağlantıları
-
-Gmail bağlantısında Google uygulama şifresi kullanılabilir. Microsoft/Hotmail için OAuth/PKCE desteklenir ve `MICROSOFT_CLIENT_ID` gerekir. Apple uygulamaya özel parola ister. Yandex OAuth istemci yapılandırması yoksa uygulama parolasıyla IMAP kullanılabilir. Normal Microsoft hesap parolasıyla giriş beklenmemelidir.
-
-AI ayarlarında Gemini, OpenAI, Anthropic ve Ollama sağlayıcı seçenekleri bulunur. Seçeneklerin görünmesi tek başına bağlantının kurulmuş olduğu anlamına gelmez; ilgili sağlayıcı yapılandırılmalı ve bağlantısı test edilmelidir.
-
-HTML iletiler script çalıştırmayan ayrı bir iframe içinde gösterilir. Dış görseller yüklenmez. Parolaları, API anahtarlarını veya `.env` dosyanızı GitHub’a göndermeyin. Yapılandırma örneği: [.env.example](.env.example).
-
-## Test sonuçları
-
-v17 için şu kontroller tamamlandı:
-
-- TypeScript: `npm run lint`
-- 19 güvenlik testi ve 4 posta/MIME testi: `npm test`
-- Chrome arayüz testi: klasör ayrımı, gerçek sayfalama, ana ekranda sayfa boyutu, MIME/script izolasyonu, ESC, `.eml` ekiyle gönderim, AI bağlantı kapısı, etiket, tam sayfa ayarlar ve dil geçişi
-- Paket testi: Electron çalışma ortamı, paketlenmiş sunucu bağımlılıkları, sağlık uç noktası ve ön yüz dosyaları
-
-Arayüz testini çalıştırmak için Chrome kurulu olmalıdır:
-
-```powershell
 npm run build
-npm run test:ui
 ```
 
-Windows paket testini derlemeden sonra çalıştırabilirsiniz:
+Platform builds:
 
 ```powershell
-node tests/package-smoke.cjs
+npm run build:win
+npm run build:mac
+npm run build:linux
+npm run build:android
+npm run build:ios
 ```
 
-Bu kontroller yapay test iletileriyle yürütüldü. **Kişisel Gmail hesabındaki güncel iletilerle canlı karşılaştırma, Hotmail OAuth ve gerçek AI sağlayıcı çağrıları bu sürümde doğrulanmadı.** Test sonuçları tüm sağlayıcıların sorunsuz çalıştığı garantisi değildir.
+macOS builds require macOS/Xcode. Android builds require the Android SDK. Run `npm run build` before `npm run test:ui`; the UI test requires Chrome.
 
-## Lisans
+### Project structure
+
+- `core/` — mail, sync, security, rules, AI, and plugins
+- `shared/` — shared React UI, types, stores, and services
+- `apps/desktop/` — Electron desktop application
+- `apps/web/` — Vite web/PWA application
+- `apps/mobile/` — Capacitor Android and iOS projects
+- `tests/` — security, mail, plugin, UI, and package checks
+
+---
+
+## Türkçe
+
+Sift Mail; Gmail, Outlook, Apple Mail, Yandex ve standart IMAP/SMTP sağlayıcılarını destekleyen, gizlilik odaklı çoklu hesap e-posta istemcisidir. Temel posta özellikleri yapay zekâ olmadan çalışır; isteğe bağlı AI sağlayıcıları özetleme, sınıflandırma ve yanıt taslağı hazırlama konularında yardımcı olabilir.
+
+### İndir
+
+[Windows için Sift Mail 0.7.3’ü indir](https://github.com/canok07/sift-mail/releases/download/v0.7.3/Sift-Mail-Setup-0.7.3.exe)
+
+### Özellikler
+
+- Tek arayüzde birden fazla e-posta hesabı
+- Birbirinden ayrı Gelen, Giden ve Spam klasörleri
+- Arka planda senkronizasyon, arama, etiketler, tarih grupları ve sayfalama
+- Yeni mail, yanıtlama, iletme, dosya ekleri ve alıcı önerileri
+- Dış görselleri ve takip piksellerini engelleyen korumalı HTML görünümü
+- Açık, Koyu, OLED, Okyanus ve Orman temaları
+- Türkçe, İngilizce ve Almanca arayüz
+- İsteğe bağlı Gemini, OpenAI, Claude ve Ollama bağlantıları
+- Hataları ana uygulamadan yalıtılmış, kısıtlı yetkili isteğe bağlı eklenti sistemi
+
+### Hesap kurulumu
+
+- **Gmail:** IMAP/SMTP için Google uygulama şifresi kullanın.
+- **Outlook / Hotmail:** `MICROSOFT_CLIENT_ID` yapılandırıldığında PKCE destekli Microsoft OAuth kullanılabilir.
+- **Apple Mail:** Apple uygulamaya özel parolası kullanın.
+- **Yandex ve diğer sağlayıcılar:** Gerektiğinde uygulama parolası veya manuel IMAP/SMTP ayarlarını kullanın.
+
+Parolaları ve API anahtarlarını depoya göndermeyin. Yerel yapılandırma için [.env.example](.env.example) dosyasını kopyalayın. Mail içeriği korumalı bir çerçevede gösterilir; bulut AI erişimi kullanıcı açıkça yapılandırana kadar kapalıdır.
+
+### Geliştirme
+
+Node.js ve npm gerektirir.
+
+```powershell
+npm ci
+npm run dev          # Web geliştirme
+npm run dev:desktop  # Masaüstü geliştirme
+npm run lint
+npm test
+npm run build
+```
+
+Platform derlemeleri:
+
+```powershell
+npm run build:win
+npm run build:mac
+npm run build:linux
+npm run build:android
+npm run build:ios
+```
+
+macOS derlemesi macOS/Xcode, Android derlemesi Android SDK gerektirir. Arayüz testi için önce `npm run build`, ardından Chrome kurulu bir sistemde `npm run test:ui` çalıştırın.
+
+### Proje yapısı
+
+- `core/` — mail, senkronizasyon, güvenlik, kurallar, AI ve eklentiler
+- `shared/` — ortak React arayüzü, tipler, mağazalar ve servisler
+- `apps/desktop/` — Electron masaüstü uygulaması
+- `apps/web/` — Vite web/PWA uygulaması
+- `apps/mobile/` — Capacitor Android ve iOS projeleri
+- `tests/` — güvenlik, mail, eklenti, arayüz ve paket kontrolleri
+
+## License / Lisans
 
 [MIT](LICENSE)
