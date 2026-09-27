@@ -92,35 +92,37 @@ export const MultiAccountModal: React.FC<MultiAccountModalProps> = ({
 
   // Update server fields when auto-discovery changes
   useEffect(() => {
-    if (discovered.imapHost) setHostInput(discovered.imapHost);
-    if (discovered.imapPort) setPortInput(discovered.imapPort);
-    setSecureSsl(discovered.imapSecure);
-    if (discovered.smtpHost) setSmtpHostInput(discovered.smtpHost);
-    if (discovered.smtpPort) setSmtpPortInput(discovered.smtpPort);
-    setSmtpSecureSsl(discovered.smtpSecure);
+    const saved = accounts.find(account => account.email.toLowerCase() === emailInput.trim().toLowerCase())?.imapConfig;
+    setHostInput(saved?.host || discovered.imapHost);
+    setPortInput(saved?.port || discovered.imapPort);
+    setSecureSsl(saved?.secure ?? discovered.imapSecure);
+    setSmtpHostInput(saved?.smtpHost || discovered.smtpHost);
+    setSmtpPortInput(saved?.smtpPort || discovered.smtpPort);
+    setSmtpSecureSsl(saved?.smtpSecure ?? discovered.smtpSecure);
 
     // If domain is detected as custom/corporate, automatically show corporate settings
-    if (discovered.domain && !discovered.isKnownProvider) {
+    if (saved || (discovered.domain && !discovered.isKnownProvider)) {
       setShowCorporateImap(true);
     }
-  }, [discovered]);
+  }, [accounts, discovered, emailInput]);
 
   useEffect(() => {
     if (!isOpen) return;
-    const receiveOAuth = async (event: MessageEvent) => {
-      if (event.origin !== window.location.origin || event.data?.type !== 'MS_OAUTH_CALLBACK') return;
-      if (event.data.error) { setTestResult({success:false,message:event.data.errorDescription || event.data.error}); return; }
+    const channel = new BroadcastChannel('sift-microsoft-oauth');
+    const receiveOAuth = async (data: any) => {
+      if (data?.type !== 'MS_OAUTH_CALLBACK') return;
+      if (data.error) { setTestResult({success:false,message:data.errorDescription || data.error}); return; }
       setIsSubmitting(true);
       try {
-        const result = await safeFetchJson<any>('/api/oauth/microsoft/callback', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:event.data.code,state:event.data.state,redirectUri:`${window.location.origin}/oauth/microsoft/callback`})});
+        const result = await safeFetchJson<any>('/api/oauth/microsoft/callback', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:data.code,state:data.state,redirectUri:`${window.location.origin}/oauth/microsoft/callback`})});
         if (!result.success || !result.accessToken) throw new Error(result.error || 'Microsoft OAuth tamamlanamadı.');
-        await onConnect({email:result.email,password:'',accessToken:result.accessToken,host:'outlook.office365.com',port:993,secure:true});
+        await onConnect({email:result.email,password:'',accessToken:result.accessToken,accessTokenExpiresAt:Date.now()+(result.expiresIn || 3600)*1000,host:'outlook.office365.com',port:993,secure:true});
         setTestResult({success:true,message:'Microsoft hesabı bağlandı; senkronizasyon arka planda başladı.'});
       } catch(error) { setTestResult({success:false,message:extractErrorMessage(error,'Microsoft hesabı bağlanamadı.')}); }
       finally { setIsSubmitting(false); }
     };
-    window.addEventListener('message', receiveOAuth);
-    return () => window.removeEventListener('message', receiveOAuth);
+    channel.onmessage = (event) => { void receiveOAuth(event.data); };
+    return () => channel.close();
   }, [isOpen,onConnect]);
 
   if (!isOpen) return null;
@@ -156,7 +158,10 @@ export const MultiAccountModal: React.FC<MultiAccountModalProps> = ({
     setTestResult(null);
 
     try {
-      await onConnect({ email, password: passwordInput, host: finalHost, port: finalPort, secure: secureSsl });
+      await onConnect({ email, password: passwordInput, host: finalHost, port: finalPort, secure: secureSsl,
+        smtpHost: smtpHostInput.trim() || discovered.smtpHost,
+        smtpPort: Number(smtpPortInput) || discovered.smtpPort,
+        smtpSecure: smtpSecureSsl });
 
       setTestResult({
         success: true,
@@ -558,16 +563,14 @@ export const MultiAccountModal: React.FC<MultiAccountModalProps> = ({
                           >
                             {isSelected ? 'Seçili' : 'Seç'}
                           </button>
-                          {accounts.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => onRemoveAccount(acc.id)}
-                              className="p-1 rounded-lg text-zinc-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors"
-                              title="Hesabı Kaldır"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            onClick={() => onRemoveAccount(acc.id)}
+                            className="p-1 rounded-lg text-zinc-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors"
+                            title="Hesabı Kaldır"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
                     );

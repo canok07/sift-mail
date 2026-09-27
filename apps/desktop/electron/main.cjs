@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, shell, session } = require('electron');
+const { app, BrowserWindow, dialog, shell, session, Tray, Menu } = require('electron');
 const { fork } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -8,6 +8,7 @@ let backend = null;
 let quitting = false;
 let baseUrl = null;
 let logFile;
+let tray = null;
 
 function log(message) {
   if (logFile) fs.appendFileSync(logFile, new Date().toISOString() + ' ' + message + '\n');
@@ -72,6 +73,12 @@ async function createWindow() {
     webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true },
   });
   window = current;
+  current.on('close', event => {
+    if (!quitting) {
+      event.preventDefault();
+      current.hide();
+    }
+  });
   current.once('closed', () => {
     if (window === current) window = null;
   });
@@ -99,6 +106,18 @@ async function createWindow() {
   }
 }
 
+function createTray() {
+  if (tray) return;
+  tray = new Tray(path.join(app.getAppPath(), 'public', 'sift-mail-icon.png'));
+  tray.setToolTip('Sift Mail — arka planda eşitleniyor');
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Sift Mail’i Aç', click: () => void createWindow() },
+    { type: 'separator' },
+    { label: 'Çıkış', click: () => { quitting = true; app.quit(); } },
+  ]));
+  tray.on('double-click', () => void createWindow());
+}
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
@@ -109,12 +128,13 @@ if (!app.requestSingleInstanceLock()) {
     quitting = true;
     if (backend) backend.kill();
   });
-  app.on('window-all-closed', () => app.quit());
+  app.on('window-all-closed', () => {});
   app.whenReady().then(async () => {
     logFile = path.join(app.getPath('userData'), 'startup.log');
     try {
       await session.defaultSession.clearStorageData({ storages: ['serviceworkers', 'cachestorage'] });
       baseUrl = await startBackend();
+      createTray();
       if (!quitting) await createWindow();
     } catch (error) {
       log('Startup failed: ' + error.message);

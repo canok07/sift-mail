@@ -10,6 +10,7 @@ import {
   UserCheck,
   RotateCcw,
   Send,
+  Paperclip,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { EmailMessage, SafeCategory, AutoRule, UserLabel } from '../types';
@@ -34,6 +35,7 @@ interface EmailDetailModalProps {
   theme?: AppTheme;
   userLabels?: UserLabel[];
   onToggleLabel?: (emailId:string,labelId:string)=>void;
+  onDownloadAttachment?: (email: EmailMessage, index: number) => void;
 }
 
 export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
@@ -52,6 +54,7 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
   theme = 'light',
   userLabels = [],
   onToggleLabel,
+  onDownloadAttachment,
 }) => {
   const { t, i18n } = useTranslation();
   const [ruleCreated, setRuleCreated] = useState(false);
@@ -228,6 +231,22 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
               )}
             </div>
           </div>
+
+          {!!email.attachments?.length && (
+            <div className="space-y-2">
+              <h3 className="text-xs font-bold uppercase tracking-wider opacity-60">Ekler</h3>
+              <div className="flex flex-wrap gap-2">
+                {email.attachments.map(attachment => (
+                  <button key={attachment.index} type="button" onClick={() => onDownloadAttachment?.(email, attachment.index)}
+                    disabled={!onDownloadAttachment || attachment.size > 25 * 1024 * 1024}
+                    className="inline-flex items-center gap-2 rounded-xl bg-zinc-500/10 px-3 py-2 text-xs disabled:opacity-50"
+                    title={attachment.size > 25 * 1024 * 1024 ? '25 MB indirme sınırını aşıyor' : 'Eki indir'}>
+                    <Paperclip size={14} />{attachment.filename} ({Math.ceil(attachment.size / 1024)} KB)
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Anti-Tracker Shield & Email Body */}
           <div>

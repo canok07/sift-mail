@@ -9,10 +9,12 @@ import {
   deleteVaultSecret,
   getVaultSummary,
 } from "./security/vault";
+import { loadLocalMailSnapshot, saveLocalMailSnapshot } from "./security/mailStore";
 import {
   testImapConnection,
   fetchImapMessages,
   performImapAction,
+  fetchImapAttachment,
   formatImapError,
   testSmtpConnection,
   sendSmtpMessage,
@@ -38,14 +40,17 @@ import {
   sensitiveApiLimiter,
   requireApiToken,
   getActiveSessionToken,
+  isLocalSessionRequest,
   isOriginAllowed,
 } from "./security";
 import {
   validateBody,
   VaultSaveSchema,
+  LocalMailSnapshotSchema,
   ImapConnectSchema,
   ImapFetchSchema,
   ImapActionSchema,
+  ImapAttachmentSchema,
   EmailSyncSchema,
   SmtpConnectSchema,
   SmtpSendSchema,
@@ -123,10 +128,25 @@ app.use("/api", generalApiLimiter);
 
 // Handshake endpoint for local frontend / Electron clients to receive session authorization token
 app.get("/api/auth/session", (req, res) => {
+  if (!isLocalSessionRequest(req.socket.remoteAddress, req.headers.host)) {
+    return res.status(403).json({ success: false, error: 'Yerel oturum anahtarı yalnızca bu cihazda kullanılabilir.' });
+  }
   res.json({
     token: getActiveSessionToken(),
     timestamp: new Date().toISOString(),
   });
+});
+
+// Mail bodies and drafts are device-local, encrypted at rest and never served to remote clients.
+app.get('/api/local/mail-cache', sensitiveApiLimiter, requireApiToken, (req, res) => {
+  if (!isLocalSessionRequest(req.socket.remoteAddress, req.headers.host)) return res.status(403).json({ success: false, error: 'Yerel posta verisi yalnızca bu cihazda açılabilir.' });
+  try { res.json({ success: true, snapshot: loadLocalMailSnapshot() }); }
+  catch { res.status(500).json({ success: false, error: 'Yerel posta verisi açılamadı; mevcut dosya korunuyor.' }); }
+});
+app.post('/api/local/mail-cache', sensitiveApiLimiter, requireApiToken, validateBody(LocalMailSnapshotSchema), (req, res) => {
+  if (!isLocalSessionRequest(req.socket.remoteAddress, req.headers.host)) return res.status(403).json({ success: false, error: 'Yerel posta verisi yalnızca bu cihazda kaydedilebilir.' });
+  try { saveLocalMailSnapshot(req.body.snapshot); res.json({ success: true }); }
+  catch { res.status(500).json({ success: false, error: 'Yerel posta verisi kaydedilemedi; önceki dosya korunuyor.' }); }
 });
 
 // Lazy initialization for Gemini AI client (supports custom API key from local vault)
@@ -216,6 +236,10 @@ app.post("/api/imap/fetch", sensitiveApiLimiter, requireApiToken, validateBody(I
 app.post("/api/imap/action", sensitiveApiLimiter, requireApiToken, validateBody(ImapActionSchema), async (req, res) => {
   try { res.json(await performImapAction(req.body)); }
   catch (error: any) { res.status(500).json({ success: false, verified: false, error: formatImapError(error, req.body.host) }); }
+});
+app.post("/api/imap/attachment", sensitiveApiLimiter, requireApiToken, validateBody(ImapAttachmentSchema), async (req, res) => {
+  try { res.json({ success: true, ...(await fetchImapAttachment(req.body)) }); }
+  catch (error: any) { res.status(400).json({ success: false, error: formatImapError(error, req.body.host) }); }
 });
 
 // ==========================================
@@ -315,6 +339,8 @@ const handleEmailSync = async (req: express.Request, res: express.Response) => {
         auth: { user, pass: host === 'imap.gmail.com' ? pass.replace(/\s+/g, '') : pass, accessToken },
         folder,
         offset: Math.max(0, Math.floor(Number(req.body?.offset) || 0)),
+        sinceUid: req.body?.sinceUid ? Math.max(1, Math.floor(Number(req.body.sinceUid))) : undefined,
+        expectedUidValidity: req.body?.expectedUidValidity ? String(req.body.expectedUidValidity) : undefined,
         accountId,
       },
       maxResults
@@ -322,8 +348,10 @@ const handleEmailSync = async (req: express.Request, res: express.Response) => {
 
     if (!result.success) {
       console.warn(`[IMAP Sync Failed] ${user}: ${result.error}`);
-      return res.status(200).json({
+      const retryable = /(?:timeout|timed out|econn|socket|connection (?:closed|lost|reset)|temporar|unavailable|network)/i.test(result.error || '');
+      return res.status(retryable ? 503 : 200).json({
         success: false,
+        retryable,
         error: result.error || "IMAP kimlik doğrulaması başarısız. Lütfen bilgilerinizi kontrol edin.",
         hint: "Outlook için 'Microsoft ile Giriş Yap', Gmail için 16 haneli Uygulama Şifresi kullanın.",
       });
@@ -345,6 +373,7 @@ const handleEmailSync = async (req: express.Request, res: express.Response) => {
       count: result.messages.length,
       messages: result.messages,
       mailboxes: result.mailboxes || [],
+      incremental: result.incremental,
       account: {
         email: user,
         provider,
@@ -423,6 +452,7 @@ app.get("/oauth/microsoft/callback", (req, res) => {
   const state = req.query.state || "";
   const error = req.query.error || "";
   const errorDescription = req.query.error_description || "";
+  const scriptValue = (value: unknown) => JSON.stringify(value).replace(/</g, '\\u003c');
 
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.send(`<!DOCTYPE html>
@@ -444,17 +474,14 @@ app.get("/oauth/microsoft/callback", (req, res) => {
   <script>
     const payload = {
       type: 'MS_OAUTH_CALLBACK',
-      code: ${JSON.stringify(code)},
-      state: ${JSON.stringify(state)},
-      error: ${JSON.stringify(error)},
-      errorDescription: ${JSON.stringify(errorDescription)}
+      code: ${scriptValue(code)},
+      state: ${scriptValue(state)},
+      error: ${scriptValue(error)},
+      errorDescription: ${scriptValue(errorDescription)}
     };
-    if (window.opener) {
-      window.opener.postMessage(payload, window.location.origin);
-      setTimeout(() => window.close(), 1000);
-    } else {
-      window.close();
-    }
+    const channel = new BroadcastChannel('sift-microsoft-oauth');
+    channel.postMessage(payload);
+    setTimeout(() => { channel.close(); window.close(); }, 1000);
   </script>
 </body>
 </html>`);

@@ -15,6 +15,12 @@ export function getActiveSessionToken(): string {
   return runtimeSessionToken;
 }
 
+export function isLocalSessionRequest(remoteAddress: string | undefined, host: string | undefined): boolean {
+  const localAddress = remoteAddress === '127.0.0.1' || remoteAddress === '::1' || remoteAddress === '::ffff:127.0.0.1';
+  const localHost = /^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(host || '');
+  return localAddress && localHost;
+}
+
 export function isValidToken(providedToken: string | undefined | null): boolean {
   if (!providedToken) return false;
   const clean = providedToken.replace(/^Bearer\s+/i, '').trim();
@@ -57,12 +63,7 @@ export function requireApiToken(req: Request, res: Response, next: NextFunction)
   // is directly originating from localhost/127.0.0.1 with standard browser headers, allow it,
   // but if SIFT_API_KEY was explicitly set, enforce it strictly.
   if (!getStaticApiKey()) {
-    const isLoopback =
-      req.ip === '127.0.0.1' ||
-      req.ip === '::1' ||
-      req.ip === '::ffff:127.0.0.1' ||
-      req.hostname === 'localhost' ||
-      req.hostname === '127.0.0.1';
+    const isLoopback = isLocalSessionRequest(req.socket.remoteAddress, req.headers.host);
 
     const origin = req.headers.origin;
     const isSameOrigin = !origin || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);

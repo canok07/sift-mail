@@ -20,9 +20,13 @@ export interface DynamicLoginCredentials {
   email: string;
   password: string;
   accessToken?: string;
+  accessTokenExpiresAt?: number;
   host?: string;
   port?: number;
   secure?: boolean;
+  smtpHost?: string;
+  smtpPort?: number;
+  smtpSecure?: boolean;
 }
 
 interface DynamicEmailLoginCardProps {

@@ -4,6 +4,8 @@
 
 Sift Mail is a privacy-focused, multi-account email client for Gmail, Outlook, Apple Mail, Yandex, and standard IMAP/SMTP providers. Core mail features work without AI; optional AI providers can assist with summaries, classification, and reply drafts.
 
+Current source version: **0.7.4**. See the [changelog](CHANGELOG.md). The latest published Windows installer is still 0.7.3.
+
 ### Download
 
 [Download Sift Mail 0.7.3 for Windows](https://github.com/canok07/sift-mail/releases/download/v0.7.3/Sift-Mail-Setup-0.7.3.exe)
@@ -12,7 +14,8 @@ Sift Mail is a privacy-focused, multi-account email client for Gmail, Outlook, A
 
 - Multiple email accounts in one interface
 - Separate Inbox, Sent, and Spam folders
-- Background synchronization, search, labels, date groups, and pagination
+- Incremental background synchronization, bounded reconnect retries, search, labels, date groups, and pagination
+- Encrypted local mail and draft cache; Windows vault keys protected with DPAPI
 - Compose, reply, forward, attachments, and recipient suggestions
 - Protected HTML email rendering with remote images and tracking pixels blocked
 - Light, Dark, OLED, Ocean, and Forest themes
@@ -69,6 +72,8 @@ macOS builds require macOS/Xcode. Android builds require the Android SDK. Run `n
 
 Sift Mail; Gmail, Outlook, Apple Mail, Yandex ve standart IMAP/SMTP sağlayıcılarını destekleyen, gizlilik odaklı çoklu hesap e-posta istemcisidir. Temel posta özellikleri yapay zekâ olmadan çalışır; isteğe bağlı AI sağlayıcıları özetleme, sınıflandırma ve yanıt taslağı hazırlama konularında yardımcı olabilir.
 
+Güncel kaynak sürümü: **0.7.4**. Ayrıntılar için [değişiklik notlarına](CHANGELOG.md) bakın. Yayımlanmış son Windows kurucusu hâlâ 0.7.3’tür.
+
 ### İndir
 
 [Windows için Sift Mail 0.7.3’ü indir](https://github.com/canok07/sift-mail/releases/download/v0.7.3/Sift-Mail-Setup-0.7.3.exe)
@@ -77,7 +82,8 @@ Sift Mail; Gmail, Outlook, Apple Mail, Yandex ve standart IMAP/SMTP sağlayıcı
 
 - Tek arayüzde birden fazla e-posta hesabı
 - Birbirinden ayrı Gelen, Giden ve Spam klasörleri
-- Arka planda senkronizasyon, arama, etiketler, tarih grupları ve sayfalama
+- Artımlı arka plan eşitlemesi, sınırlı yeniden bağlantı denemesi, arama, etiketler, tarih grupları ve sayfalama
+- Şifreli yerel ileti/taslak önbelleği ve Windows DPAPI korumalı kasa anahtarı
 - Yeni mail, yanıtlama, iletme, dosya ekleri ve alıcı önerileri
 - Dış görselleri ve takip piksellerini engelleyen korumalı HTML görünümü
 - Açık, Koyu, OLED, Okyanus ve Orman temaları

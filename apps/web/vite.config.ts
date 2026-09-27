@@ -49,6 +49,7 @@ export default defineConfig(() => {
         },
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+          navigateFallbackDenylist: [/^\/oauth\/microsoft\/callback(?:\?|$)/],
           runtimeCaching: [
             {
               // Cache NLP email analysis responses so analyzed emails can be read offline

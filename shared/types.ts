@@ -12,6 +12,8 @@ export interface MailboxFolder {
   type: FolderType;
   totalMessages?: number;
   unreadMessages?: number;
+  uidValidity?: string;
+  highestUid?: number;
 }
 
 export interface OrderShippingInfo {
@@ -43,6 +45,7 @@ export interface ConnectedAccount {
     username: string;
     smtpHost?: string;
     smtpPort?: number;
+    smtpSecure?: boolean;
   };
 }
 
@@ -111,6 +114,7 @@ export interface EmailMessage {
   snippet: string;
   bodyText?: string;
   bodyHtml?: string;
+  attachments?: Array<{ index: number; filename: string; contentType: string; size: number }>;
   listUnsubscribe?: string;
   listUnsubscribePost?: string;
   labels?: string[];

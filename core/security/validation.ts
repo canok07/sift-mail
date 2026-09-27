@@ -20,6 +20,15 @@ export const VaultSaveSchema = z.object({
     .optional(),
 });
 
+export const LocalMailSnapshotSchema = z.object({
+  snapshot: z.object({
+    version: z.literal(1),
+    messages: z.array(z.object({ id: z.string().min(1).max(500), accountId: z.string().min(1).max(100) }).passthrough()).max(5000),
+    composeDraft: z.record(z.string(), z.unknown()).nullable(),
+    replyDrafts: z.record(z.string(), z.unknown()),
+  }),
+});
+
 export const ImapConnectSchema = z.object({
   host: z.string().trim().min(1, 'IMAP sunucu adresi zorunludur.').max(255),
   port: z.coerce.number().int().min(1).max(65535, 'Geçersiz port numarası.'),
@@ -36,6 +45,8 @@ export const ImapConnectSchema = z.object({
   folder: z.string().max(255).optional(),
   folders: z.array(z.string().max(255)).optional(),
   offset: z.coerce.number().int().min(0).optional(),
+  sinceUid: z.coerce.number().int().positive().optional(),
+  expectedUidValidity: z.string().max(40).optional(),
   syncAllFolders: z.boolean().optional(),
   accountId: z.string().max(100).optional(),
   provider: z.string().max(50).optional(),
@@ -52,8 +63,16 @@ export const ImapActionSchema = ImapConnectSchema.omit({ folder: true, folders: 
   destination: z.string().trim().min(1).max(255).optional(),
 });
 
+export const ImapAttachmentSchema = ImapConnectSchema.omit({ folders: true, offset: true, syncAllFolders: true }).extend({
+  folder: z.string().trim().min(1).max(255),
+  uid: z.coerce.number().int().positive(),
+  index: z.coerce.number().int().min(0).max(100),
+});
+
 export const EmailSyncSchema = z.object({
   offset: z.coerce.number().int().min(0).optional(),
+  sinceUid: z.coerce.number().int().positive().optional(),
+  expectedUidValidity: z.string().max(40).optional(),
   email: z.string().trim().email('Geçerli bir e-posta adresi girin.').optional().or(z.literal('')),
   password: z.string().optional().or(z.literal('')),
   accessToken: z.string().optional(),

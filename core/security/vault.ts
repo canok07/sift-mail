@@ -1,11 +1,13 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import { spawnSync } from 'child_process';
 
 const DATA_DIR = process.env.SIFT_DATA_DIR || path.join(process.cwd(), 'data');
 const VAULT_FILE = path.join(DATA_DIR, 'vault.enc');
 const SALT_FILE = path.join(DATA_DIR, '.vault_salt');
 const KEY_FILE = path.join(DATA_DIR, '.vault_key');
+const WINDOWS_KEY_FILE = path.join(DATA_DIR, '.vault_key.dpapi');
 const ALGORITHM_GCM = 'aes-256-gcm';
 const ALGORITHM_CBC_LEGACY = 'aes-256-cbc';
 
@@ -24,11 +26,64 @@ function getOrCreateSalt(): Buffer {
   return newSalt;
 }
 
+let cachedWindowsSecret: string | null = null;
+
+function atomicWriteText(file: string, value: string): void {
+  const temporary = `${file}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+  try {
+    fs.writeFileSync(temporary, value, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    fs.renameSync(temporary, file);
+  } finally {
+    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
+  }
+}
+
+function windowsDpapi(value: string, operation: 'Protect' | 'Unprotect'): string {
+  const script = `Add-Type -AssemblyName System.Security -ErrorAction Stop; $inputBytes = [Convert]::FromBase64String([Console]::In.ReadToEnd().Trim()); $outputBytes = [Security.Cryptography.ProtectedData]::${operation}($inputBytes, $null, [Security.Cryptography.DataProtectionScope]::CurrentUser); [Console]::Out.Write([Convert]::ToBase64String($outputBytes))`;
+  const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], {
+    input: value, encoding: 'utf8', windowsHide: true, timeout: 15000, maxBuffer: 1024 * 1024,
+  });
+  if (result.error || result.status !== 0 || !result.stdout?.trim()) {
+    throw new Error('Windows kullanıcı anahtarı korunamadı veya açılamadı. Kasa dosyaları değiştirilmedi.');
+  }
+  return result.stdout.trim();
+}
+
+function protectWindowsSecret(secret: string): void {
+  const protectedValue = windowsDpapi(Buffer.from(secret, 'utf8').toString('base64'), 'Protect');
+  if (Buffer.from(windowsDpapi(protectedValue, 'Unprotect'), 'base64').toString('utf8') !== secret) {
+    throw new Error('Windows kasa anahtarı doğrulanamadı.');
+  }
+  atomicWriteText(WINDOWS_KEY_FILE, protectedValue);
+}
+
 // Generate or read persistent local machine vault key (NO hardcoded fallback)
 function getOrCreateMachineSecret(): string {
   // If explicitly provided via environment, prefer that
   if (process.env.VAULT_SECRET && process.env.VAULT_SECRET.trim().length > 0) {
     return process.env.VAULT_SECRET.trim();
+  }
+
+  if (process.platform === 'win32') {
+    if (cachedWindowsSecret) return cachedWindowsSecret;
+    if (fs.existsSync(WINDOWS_KEY_FILE)) {
+      const protectedValue = fs.readFileSync(WINDOWS_KEY_FILE, 'utf8').trim();
+      cachedWindowsSecret = Buffer.from(windowsDpapi(protectedValue, 'Unprotect'), 'base64').toString('utf8');
+      if (!cachedWindowsSecret) throw new Error('Windows kasa anahtarı boş.');
+      if (fs.existsSync(KEY_FILE)) {
+        const legacy = fs.readFileSync(KEY_FILE, 'utf8').trim();
+        if (legacy !== cachedWindowsSecret) throw new Error('Eski ve Windows korumalı kasa anahtarları uyuşmuyor; dosyalar korunuyor.');
+        fs.unlinkSync(KEY_FILE);
+      }
+      return cachedWindowsSecret;
+    }
+    const legacy = fs.existsSync(KEY_FILE) ? fs.readFileSync(KEY_FILE, 'utf8').trim() : '';
+    if (!legacy && fs.existsSync(KEY_FILE)) throw new Error('Eski kasa anahtarı boş; yeni anahtar oluşturulmadı.');
+    const secret = legacy || crypto.randomBytes(32).toString('hex');
+    protectWindowsSecret(secret);
+    if (legacy) fs.unlinkSync(KEY_FILE);
+    cachedWindowsSecret = secret;
+    return secret;
   }
 
   // Otherwise, read or generate a secure host-bound key file with restricted permissions (0600)
@@ -117,7 +172,7 @@ export function decryptData(cipherText: string): string {
       // Auto-migrate legacy format to AES-256-GCM
       try {
         const reEncrypted = encryptData(decrypted);
-        fs.writeFileSync(VAULT_FILE, reEncrypted, { encoding: 'utf8', mode: 0o600 });
+        atomicWriteText(VAULT_FILE, reEncrypted);
         console.log('[Sift Vault] Eski AES-256-CBC kasası başarıyla güvenli AES-256-GCM formatına yükseltildi.');
       } catch (migrateErr) {
         console.warn('[Sift Vault] Otomatik GCM yükseltme uyarısı:', migrateErr);
@@ -155,7 +210,7 @@ export function loadVaultItems(): Record<string, StoredVaultItem> {
 export function saveVaultItems(items: Record<string, StoredVaultItem>): void {
   const serialized = JSON.stringify(items);
   const encrypted = encryptData(serialized);
-  fs.writeFileSync(VAULT_FILE, encrypted, { encoding: 'utf8', mode: 0o600 });
+  atomicWriteText(VAULT_FILE, encrypted);
 }
 
 export function saveVaultSecret(

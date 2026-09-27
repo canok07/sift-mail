@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import os from 'os';
+import { spawnSync } from 'child_process';
 import {
   saveVaultSecret,
   getVaultSecret,
@@ -19,6 +21,7 @@ import {
 } from '../core/security/validation';
 import {
   getActiveSessionToken,
+  isLocalSessionRequest,
   createRateLimiter,
   isOriginAllowed,
 } from '../core/security';
@@ -48,10 +51,40 @@ describe('Sift Security Hardening & Validation Test Suite', () => {
   });
 
   describe('1. Vault AES-256-GCM Authenticated Encryption', () => {
+    it('migrates a legacy Windows key without changing the derived vault key', () => {
+      if (process.platform !== 'win32') return;
+      const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sift-vault-migration-'));
+      const legacySecret = crypto.randomBytes(32).toString('hex');
+      const salt = crypto.randomBytes(32);
+      try {
+        fs.writeFileSync(path.join(directory, '.vault_key'), legacySecret);
+        fs.writeFileSync(path.join(directory, '.vault_salt'), salt);
+        const source = new URL('../core/security/vault.ts', import.meta.url).href;
+        const script = `import { getVaultKey } from ${JSON.stringify(source)}; process.stdout.write(getVaultKey().toString('hex'));`;
+        const run = () => spawnSync(process.execPath, ['--import', import.meta.resolve('tsx/esm'), '--input-type=module', '-e', script], {
+          cwd: directory, env: { ...process.env, SIFT_DATA_DIR: directory, VAULT_SECRET: '' }, encoding: 'utf8', timeout: 20000,
+        });
+        const first = run();
+        assert.equal(first.status, 0, first.stderr);
+        assert.equal(first.stdout, crypto.scryptSync(legacySecret, salt, 32).toString('hex'));
+        assert.ok(fs.existsSync(path.join(directory, '.vault_key.dpapi')));
+        assert.ok(!fs.existsSync(path.join(directory, '.vault_key')));
+        const second = run();
+        assert.equal(second.status, 0, second.stderr);
+        assert.equal(second.stdout, first.stdout);
+      } finally {
+        if (directory.startsWith(path.join(os.tmpdir(), 'sift-vault-migration-'))) fs.rmSync(directory, { recursive: true, force: true });
+      }
+    });
+
     it('should encrypt, store, and decrypt a secret correctly with AES-256-GCM', () => {
       saveVaultSecret(testKey, testValue, 'imap', 'Test Secret');
       const retrieved = getVaultSecret(testKey);
       assert.equal(retrieved, testValue, 'Decrypted value should match original plaintext');
+      if (process.platform === 'win32' && !process.env.VAULT_SECRET) {
+        assert.ok(fs.existsSync(path.join(process.cwd(), 'data', '.vault_key.dpapi')), 'Windows vault key must be DPAPI protected');
+        assert.ok(!fs.existsSync(path.join(process.cwd(), 'data', '.vault_key')), 'Plaintext Windows vault key must not remain');
+      }
 
       const summary = getVaultSummary();
       const item = summary.keys.find(s => s.key === testKey);
@@ -216,6 +249,13 @@ describe('Sift Security Hardening & Validation Test Suite', () => {
       const token = getActiveSessionToken();
       assert.ok(token, 'Session token should be non-empty string');
       assert.ok(token.length >= 32, 'Session token should have at least 32 characters of entropy');
+    });
+
+    it('should only issue local session tokens to loopback connections and hosts', () => {
+      assert.equal(isLocalSessionRequest('127.0.0.1', '127.0.0.1:47831'), true);
+      assert.equal(isLocalSessionRequest('::1', 'localhost:47831'), true);
+      assert.equal(isLocalSessionRequest('203.0.113.10', 'localhost:47831'), false);
+      assert.equal(isLocalSessionRequest('127.0.0.1', 'public.example.com'), false);
     });
 
     it('rate limiter should allow requests within window and throttle excess', () => {

@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { syncEmailsFromBackend } from './services/mailSyncService';
+import { ensureFreshMicrosoftCredentials, syncEmailsFromBackend } from './services/mailSyncService';
 import { analyzeEmailWithGemini } from './services/emailAnalyzer';
 import {
   CATEGORIES_META,
@@ -50,6 +50,8 @@ import { EmailReplyModal } from './components/EmailReplyModal';
 import { ComposeModal } from './components/ComposeModal';
 import { safeFetchJson } from './services/apiClient';
 import { MailViewRequestGuard } from './services/mailViewGuard';
+import { mergeMailRefresh } from './services/mailMerge';
+import { ComposeDraft, ReplyDraft, loadLocalMailSnapshot, saveLocalMailSnapshot } from './services/localMailStore';
 import { motion, AnimatePresence } from 'motion/react';
 import { useSettingsStore } from './stores/useSettingsStore';
 import { ProposedAIAction, generateSmartAIAction } from './services/ai/langchainTools';
@@ -135,11 +137,25 @@ export default function App() {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [isSyncingEmails, setIsSyncingEmails] = useState(false);
 
-  // Multi-Provider Accounts state (starts empty until user signs in)
-  const [accounts, setAccounts] = useState<ConnectedAccount[]>(INITIAL_ACCOUNTS);
+  // Remember account addresses and server settings; passwords and tokens stay in memory.
+  const [accounts, setAccounts] = useState<ConnectedAccount[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('sift_accounts_meta_v1') || '[]');
+      if (!Array.isArray(saved)) return INITIAL_ACCOUNTS;
+      return saved.filter(account => account && typeof account.id === 'string' && typeof account.email === 'string')
+        .map(account => ({...account, status: 'error' as const, totalCount: 0, unreadCount: 0, mailboxes: []}));
+    } catch { return INITIAL_ACCOUNTS; }
+  });
+  useEffect(() => {
+    localStorage.setItem('sift_accounts_meta_v1', JSON.stringify(accounts.map(account => ({
+      id: account.id, email: account.email, displayName: account.displayName,
+      provider: account.provider, isPrimary: account.isPrimary, imapConfig: account.imapConfig,
+    }))));
+  }, [accounts]);
   const [activeAccountId, setActiveAccountId] = useState<string | 'all'>('all');
   const mailViewGuardRef = useRef(new MailViewRequestGuard());
   const accountSyncGenerationRef = useRef<Record<string, number>>({});
+  const inboxPollCountRef = useRef<Record<string, number>>({});
   const [isDesktopModalOpen, setIsDesktopModalOpen] = useState(false);
   const [isMultiAccountModalOpen, setIsMultiAccountModalOpen] = useState(false);
   const [isVaultModalOpen, setIsVaultModalOpen] = useState(false);
@@ -152,6 +168,12 @@ export default function App() {
 
   // Emails & UI state (starts completely clean & empty, prompting login)
   const [emails, setEmails] = useState<EmailMessage[]>([]);
+  const [composeDraft, setComposeDraft] = useState<ComposeDraft | null>(null);
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, ReplyDraft>>({});
+  const [mailCacheLoaded, setMailCacheLoaded] = useState(false);
+  const mailCacheWriteRef = useRef<Promise<void>>(Promise.resolve());
+  const emailsRef = useRef<EmailMessage[]>([]);
+  useEffect(() => { emailsRef.current = emails; }, [emails]);
   const [isLoading, setIsLoading] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [isCategorizing, setIsCategorizing] = useState(false);
@@ -187,7 +209,13 @@ export default function App() {
   const [selectedCategory, setSelectedCategory] = useState<SafeCategory | 'all'>('all');
   const [viewMode, setViewMode] = useState<'flat' | 'grouped'>('flat');
   const [isRulesModalOpen, setIsRulesModalOpen] = useState(false);
-  const [autoRules, setAutoRules] = useState<AutoRule[]>(DEFAULT_AUTO_RULES);
+  const [autoRules, setAutoRules] = useState<AutoRule[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('sift_auto_rules') || 'null');
+      return Array.isArray(saved) && saved.every(rule => rule && typeof rule.id === 'string' && typeof rule.patternValue === 'string' && typeof rule.isActive === 'boolean') ? saved : DEFAULT_AUTO_RULES;
+    } catch { return DEFAULT_AUTO_RULES; }
+  });
+  useEffect(() => { localStorage.setItem('sift_auto_rules', JSON.stringify(autoRules)); }, [autoRules]);
   const [autoWatcherEnabled, setAutoWatcherEnabled] = useState(true);
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
 
@@ -237,20 +265,112 @@ export default function App() {
     }, 4000);
   }, []);
 
+  useEffect(() => {
+    let mounted = true;
+    void loadLocalMailSnapshot().then(snapshot => {
+      if (!mounted) return;
+      if (!snapshot) { setMailCacheLoaded(true); return; }
+      const knownAccounts = new Set(accounts.map(account => account.id));
+      if (snapshot.messages.some(email => !knownAccounts.has(email.accountId))) {
+        showToast('Bazı hesap kayıtları eksik; mevcut şifreli posta dosyası korunuyor.', 'error');
+        return;
+      }
+      const cached = snapshot.messages.filter(email => email && typeof email.id === 'string' && knownAccounts.has(email.accountId));
+      setEmails(prev => {
+        const ids = new Set(prev.map(email => email.id));
+        return [...prev, ...cached.filter(email => !ids.has(email.id))];
+      });
+      setComposeDraft(prev => prev || snapshot.composeDraft);
+      setReplyDrafts(prev => ({ ...snapshot.replyDrafts, ...prev }));
+      setMailCacheLoaded(true);
+    }).catch(() => {
+      if (mounted) showToast('Yerel posta verisi açılamadı; mevcut şifreli dosya korunuyor.', 'error');
+    });
+    return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!mailCacheLoaded) return;
+    const snapshot = { version: 1 as const, messages: emails.slice(0, 5000), composeDraft, replyDrafts };
+    const timer = window.setTimeout(() => {
+      mailCacheWriteRef.current = mailCacheWriteRef.current.catch(() => {}).then(() => saveLocalMailSnapshot(snapshot));
+      void mailCacheWriteRef.current.catch(() => showToast('Yerel posta verisi kaydedilemedi.', 'error'));
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [mailCacheLoaded, emails, composeDraft, replyDrafts, showToast]);
+
+  const updateAccountCredentials = useCallback((accountId: string, credentials: DynamicLoginCredentials) => {
+    setCredentialsByAccount(prev => ({...prev, [accountId]: credentials}));
+    setSessionCredentials(prev => prev?.email.toLowerCase() === credentials.email.toLowerCase() ? credentials : prev);
+  }, []);
+
+  const handleReplyDraftChange = useCallback((emailId: string, draft: ReplyDraft | null) => {
+    setReplyDrafts(prev => {
+      const next = { ...prev };
+      if (draft) next[emailId] = draft;
+      else delete next[emailId];
+      return next;
+    });
+  }, []);
+
   const performRemoteMailAction = useCallback(async (email: EmailMessage, action: 'mark_read' | 'mark_unread' | 'trash' | 'archive') => {
     if (!email.uid || !email.folder || !email.accountId) return;
     const credentials = credentialsByAccount[email.accountId];
     if (!credentials) throw new Error('Bu işlem için hesaba yeniden giriş yapın.');
+    const activeCredentials = await ensureFreshMicrosoftCredentials(credentials);
+    if (activeCredentials !== credentials) updateAccountCredentials(email.accountId, activeCredentials);
     const result = await safeFetchJson<{success:boolean;verified:boolean;destination?:string}>('/api/imap/action', {
       method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({
-        host: credentials.host, port: credentials.port || 993, secure: credentials.secure !== false,
-        auth: { user: credentials.email, pass: credentials.password || undefined, accessToken: credentials.accessToken },
+        host: activeCredentials.host, port: activeCredentials.port || 993, secure: activeCredentials.secure !== false,
+        auth: { user: activeCredentials.email, pass: activeCredentials.password || undefined, accessToken: activeCredentials.accessToken },
         accountId: email.accountId, uid: email.uid, sourceFolder: email.folder, action,
       }),
     });
     if (!result.success || !result.verified) throw new Error('Posta sunucusu işlemi doğrulamadı.');
     return result;
-  }, [credentialsByAccount]);
+  }, [credentialsByAccount, updateAccountCredentials]);
+
+  const handleOpenDetail = useCallback((item: EmailMessage) => {
+    setDetailEmail(item);
+    if (item.isRead) return;
+    void (async () => {
+      try {
+        if (item.uid && item.folder && item.accountId) await performRemoteMailAction(item, 'mark_read');
+        setEmails(prev => prev.map(email => email.id === item.id ? {...email, isRead: true} : email));
+        setDetailEmail(prev => prev?.id === item.id ? {...prev, isRead: true} : prev);
+        if (item.accountId) setAccounts(prev => prev.map(account => account.id === item.accountId ? {...account, unreadCount: Math.max(0, (account.unreadCount || 0) - 1)} : account));
+      } catch (error: any) { showToast(error.message || 'İleti okundu olarak işaretlenemedi.', 'error'); }
+    })();
+  }, [performRemoteMailAction, showToast]);
+
+  const handleDownloadAttachment = useCallback((email: EmailMessage, index: number) => {
+    void (async () => {
+      try {
+        if (!email.accountId || !email.uid || !email.folder) throw new Error('Ek için posta sunucusu bilgisi bulunamadı.');
+        const credentials = credentialsByAccount[email.accountId];
+        if (!credentials) throw new Error('Eki indirmek için hesaba yeniden giriş yapın.');
+        const activeCredentials = await ensureFreshMicrosoftCredentials(credentials);
+        if (activeCredentials !== credentials) updateAccountCredentials(email.accountId, activeCredentials);
+        const result = await safeFetchJson<{ success: boolean; filename: string; contentType: string; content: string }>('/api/imap/attachment', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+            host: activeCredentials.host, port: activeCredentials.port || 993, secure: activeCredentials.secure !== false,
+            auth: { user: activeCredentials.email, pass: activeCredentials.password || undefined, accessToken: activeCredentials.accessToken },
+            folder: email.folder, uid: email.uid, index,
+          }),
+        });
+        if (!result.success || !result.content) throw new Error('Ek indirilemedi.');
+        const bytes = Uint8Array.from(atob(result.content), character => character.charCodeAt(0));
+        const url = URL.createObjectURL(new Blob([bytes], { type: result.contentType || 'application/octet-stream' }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = result.filename || `attachment-${index + 1}`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      } catch (error: any) { showToast(error.message || 'Ek indirilemedi.', 'error'); }
+    })();
+  }, [credentialsByAccount, updateAccountCredentials, showToast]);
 
   // Handle Swipe-to-Action: Mark safe and archive
   const handleMarkSafeArchive = useCallback(
@@ -264,7 +384,7 @@ export default function App() {
           if (e.id === id) {
             return {
               ...e,
-              isRead: true,
+              isRead: e.isRead,
               folderType: 'archive',
               safeCategory: e.safeCategory || 'work',
               analysis: e.analysis
@@ -348,55 +468,74 @@ export default function App() {
       const syncGeneration = (accountSyncGenerationRef.current[accountId] || 0) + 1;
       accountSyncGenerationRef.current[accountId] = syncGeneration;
       const discovered = detectMailProvider(cleanEmail);
+      const existingAccount = accounts.find(account => account.id === accountId);
+      const imapHost = credentials.host || existingAccount?.imapConfig?.host || discovered.imapHost;
+      const imapPort = credentials.port || existingAccount?.imapConfig?.port || discovered.imapPort;
+      const smtpHost = credentials.smtpHost || existingAccount?.imapConfig?.smtpHost || discovered.smtpHost;
+      const smtpPort = credentials.smtpPort || existingAccount?.imapConfig?.smtpPort || discovered.smtpPort;
+      const smtpSecure = credentials.smtpSecure ?? existingAccount?.imapConfig?.smtpSecure ?? discovered.smtpSecure;
+      const normalizedCredentials = {
+        ...credentials, host: imapHost, port: imapPort,
+        secure: credentials.secure ?? existingAccount?.imapConfig?.secure ?? discovered.imapSecure,
+        smtpHost, smtpPort, smtpSecure,
+      };
       const shellAccount: ConnectedAccount = {
-        id: accountId, provider: discovered.provider, email: cleanEmail, displayName: cleanEmail,
-        status: 'syncing', isPrimary: accounts.length === 0, totalCount: 0, unreadCount: 0, mailboxes: [],
-        imapConfig: { host: credentials.host || discovered.imapHost, port: credentials.port || 993, secure: credentials.secure !== false, username: cleanEmail, smtpHost: discovered.smtpHost, smtpPort: discovered.smtpPort },
+        ...existingAccount,
+        id: accountId, provider: discovered.provider, email: cleanEmail, displayName: existingAccount?.displayName || cleanEmail,
+        status: 'syncing', isPrimary: existingAccount?.isPrimary ?? accounts.length === 0, totalCount: existingAccount?.totalCount || 0, unreadCount: existingAccount?.unreadCount || 0, mailboxes: existingAccount?.mailboxes || [],
+        imapConfig: { host: imapHost, port: imapPort, secure: credentials.secure ?? existingAccount?.imapConfig?.secure ?? discovered.imapSecure, username: cleanEmail, smtpHost, smtpPort, smtpSecure },
       };
       setAccounts(prev => [shellAccount, ...prev.filter(a => a.id !== accountId)]);
       setActiveAccountId(accountId);
-      setSessionCredentials(credentials);
-      setCredentialsByAccount(prev => ({...prev, [accountId]: credentials}));
-      setIsLoginModalOpen(false);
-      setIsMultiAccountModalOpen(false);
-      showToast('Hesap eklendi. İletiler arka planda senkronize ediliyor…', 'info');
+      setSessionCredentials(normalizedCredentials);
+      setCredentialsByAccount(prev => ({...prev, [accountId]: normalizedCredentials}));
+      showToast('Hesap bağlanıyor ve iletiler senkronize ediliyor…', 'info');
       setIsSyncingEmails(true);
 
-      void (async () => { try {
+      try {
+        const activeCredentials = await ensureFreshMicrosoftCredentials(normalizedCredentials);
+        if (activeCredentials !== normalizedCredentials) updateAccountCredentials(accountId, activeCredentials);
         const { messages, accountEmail, provider, mailboxes } = await syncEmailsFromBackend({
-          email: credentials.email,
-          password: credentials.password,
-          host: credentials.host,
-          port: credentials.port,
-          secure: credentials.secure,
+          email: activeCredentials.email,
+          password: activeCredentials.password,
+          accessToken: activeCredentials.accessToken,
+          host: imapHost,
+          port: imapPort,
+          secure: activeCredentials.secure ?? existingAccount?.imapConfig?.secure ?? discovered.imapSecure,
           maxResults: 100,
           accountId,
         });
         if (accountSyncGenerationRef.current[accountId] !== syncGeneration) return;
 
         const categorized = applyRulesToEmails(messages, autoRules);
-        setEmails(prev => [...prev.filter(e => e.accountId !== accountId), ...categorized]);
+        const refreshedFolders = mailboxes.filter(mailbox => ['inbox', 'spam', 'sent'].includes(mailbox.type)).map(mailbox => mailbox.path);
+        setEmails(prev => mergeMailRefresh(prev, categorized, accountId, refreshedFolders).messages);
 
         const newAccount: ConnectedAccount = {
           id: accountId,
           mailboxes,
           provider: provider,
           email: accountEmail,
-          displayName: accountEmail,
+          displayName: existingAccount?.displayName || accountEmail,
           status: 'connected',
-          isPrimary: true,
+          isPrimary: shellAccount.isPrimary,
           lastSyncAt: new Date().toISOString(),
-          totalCount: categorized.length,
+          totalCount: mailboxes.reduce((sum, mailbox) => sum + (mailbox.totalMessages || 0), 0),
           unreadCount: categorized.filter((e) => !e.isRead).length,
           imapConfig: {
-            host: credentials.host || 'imap.gmail.com',
-            port: credentials.port || 993,
-            secure: credentials.secure !== false,
+            host: imapHost,
+            port: imapPort,
+            secure: credentials.secure ?? existingAccount?.imapConfig?.secure ?? discovered.imapSecure,
             username: accountEmail,
+            smtpHost,
+            smtpPort,
+            smtpSecure,
           },
         };
 
         setAccounts(prev => prev.map(a => a.id === accountId ? newAccount : a));
+        setIsLoginModalOpen(false);
+        setIsMultiAccountModalOpen(false);
 
         showToast(
           `${categorized.length} adet e-posta başarıyla senkronize edildi!`,
@@ -412,11 +551,12 @@ export default function App() {
         setSyncError(errorMessage);
         setAccounts(prev => prev.map(a => a.id === accountId ? {...a, status:'error'} : a));
         showToast(errorMessage, 'error');
+        throw error;
       } finally {
         if (accountSyncGenerationRef.current[accountId] === syncGeneration) setIsSyncingEmails(false);
-      } })();
+      }
     },
-    [showToast, applyRulesToEmails, autoRules, accounts]
+    [showToast, applyRulesToEmails, autoRules, accounts, updateAccountCredentials]
   );
 
   const handleSyncEmails = useCallback(async () => {
@@ -427,8 +567,63 @@ export default function App() {
       setIsLoginModalOpen(true);
       return;
     }
-    for (const credential of credentials) await handleLoginAndSync(credential);
+    for (const credential of credentials) {
+      try { await handleLoginAndSync(credential); } catch { /* Error is displayed by the login handler. */ }
+    }
   }, [accounts, activeAccountId, credentialsByAccount, handleLoginAndSync]);
+
+  useEffect(() => {
+    if (!autoWatcherEnabled || !accounts.some(account => account.status === 'connected' && credentialsByAccount[account.id])) return;
+    let stopped = false;
+    let running = false;
+    const pollInbox = async () => {
+      if (running || stopped || isSyncingEmails) return;
+      running = true;
+      try {
+        for (const account of accounts) {
+          if (stopped) break;
+          const credentials = credentialsByAccount[account.id];
+          const inbox = account.mailboxes?.find(mailbox => mailbox.type === 'inbox');
+          if (!credentials || !inbox || account.status !== 'connected') continue;
+          try {
+            const activeCredentials = await ensureFreshMicrosoftCredentials(credentials);
+            if (activeCredentials !== credentials) updateAccountCredentials(account.id, activeCredentials);
+            const pollCount = (inboxPollCountRef.current[account.id] || 0) + 1;
+            inboxPollCountRef.current[account.id] = pollCount;
+            const forceWindowRefresh = pollCount % 15 === 0;
+            const highestLoadedUid = emailsRef.current.reduce((highest, email) =>
+              email.accountId === account.id && email.folder === inbox.path ? Math.max(highest, email.uid || 0) : highest, 0);
+            const result = await syncEmailsFromBackend({
+              ...activeCredentials, accountId: account.id, folder: inbox.path, maxResults: 25,
+              sinceUid: !forceWindowRefresh && highestLoadedUid > 0 && inbox.uidValidity ? highestLoadedUid : undefined,
+              expectedUidValidity: !forceWindowRefresh ? inbox.uidValidity : undefined,
+            }, { retries: 2, retryDelayMs: 750 });
+            if (stopped) break;
+            const categorized = applyRulesToEmails(result.messages, autoRules);
+            const merged = result.incremental
+              ? (() => {
+                  const ids = new Set(emailsRef.current.map(email => email.id));
+                  const added = categorized.filter(email => !ids.has(email.id));
+                  return { messages: [...added, ...emailsRef.current], added };
+                })()
+              : mergeMailRefresh(emailsRef.current, categorized, account.id, [inbox.path]);
+            emailsRef.current = merged.messages;
+            setEmails(merged.messages);
+            setAccounts(prev => prev.map(current => {
+              if (current.id !== account.id) return current;
+              const incoming = new Map(result.mailboxes.map(mailbox => [mailbox.path, mailbox]));
+              const mailboxes = (current.mailboxes || []).map(mailbox => ({ ...mailbox, ...(incoming.get(mailbox.path) || {}) }));
+              for (const mailbox of result.mailboxes) if (!mailboxes.some(item => item.path === mailbox.path)) mailboxes.push(mailbox);
+              return {...current, lastSyncAt: new Date().toISOString(), mailboxes};
+            }));
+            if (merged.added.length) void sendLocalNotification('Sift Mail', `${account.email}: ${merged.added.length} yeni ileti`);
+          } catch (error) { console.warn('Arka plan posta kontrolü başarısız:', error); }
+        }
+      } finally { running = false; }
+    };
+    const timer = window.setInterval(() => { void pollInbox(); }, 120_000);
+    return () => { stopped = true; window.clearInterval(timer); };
+  }, [accounts, credentialsByAccount, autoRules, autoWatcherEnabled, isSyncingEmails, applyRulesToEmails, updateAccountCredentials]);
 
   // Account management handlers
   const handleAddAccount = (
@@ -480,11 +675,25 @@ export default function App() {
   };
 
   const handleRemoveAccount = (id: string) => {
+    const removedEmail = accounts.find(account => account.id === id)?.email.toLowerCase();
+    if (mailCacheLoaded) {
+      const snapshot = {
+        version: 1 as const,
+        messages: emails.filter(email => email.accountId !== id).slice(0, 5000),
+        composeDraft: composeDraft?.accountId === id ? null : composeDraft,
+        replyDrafts: Object.fromEntries(Object.entries(replyDrafts).filter(([, draft]) => draft.accountId !== id)),
+      };
+      mailCacheWriteRef.current = mailCacheWriteRef.current.catch(() => {}).then(() => saveLocalMailSnapshot(snapshot));
+      void mailCacheWriteRef.current.catch(() => showToast('Kaldırılan hesabın yerel verisi silinemedi.', 'error'));
+    }
     accountSyncGenerationRef.current[id] = (accountSyncGenerationRef.current[id] || 0) + 1;
     mailViewGuardRef.current.invalidate();
     setAccounts((prev) => prev.filter((a) => a.id !== id));
     setEmails((prev) => prev.filter((email) => email.accountId !== id));
+    setComposeDraft(prev => prev?.accountId === id ? null : prev);
+    setReplyDrafts(prev => Object.fromEntries(Object.entries(prev).filter(([, draft]) => draft.accountId !== id)));
     setCredentialsByAccount((prev) => { const next = { ...prev }; delete next[id]; return next; });
+    if (removedEmail) setSessionCredentials(prev => prev?.email.toLowerCase() === removedEmail ? null : prev);
     if (activeAccountId === id) {
       setActiveAccountId('all');
     }
@@ -507,7 +716,7 @@ export default function App() {
 
   const handleRefresh = () => {
     if (sessionCredentials) {
-      handleLoginAndSync(sessionCredentials);
+      void handleLoginAndSync(sessionCredentials).catch(() => {});
     } else {
       setIsLoginModalOpen(true);
     }
@@ -1118,7 +1327,9 @@ export default function App() {
         if (!mailbox) continue;
         const offset = emails.filter(e => e.accountId === account.id && e.folder === mailbox.path).length;
         if (offset >= (mailbox.totalMessages || 0)) continue;
-        const result = await syncEmailsFromBackend({...accountCredentials, accountId: account.id, folder: mailbox.path, offset, maxResults: pageSize});
+        const activeCredentials = await ensureFreshMicrosoftCredentials(accountCredentials);
+        if (activeCredentials !== accountCredentials) updateAccountCredentials(account.id, activeCredentials);
+        const result = await syncEmailsFromBackend({...activeCredentials, accountId: account.id, folder: mailbox.path, offset, maxResults: pageSize});
         if (!mailViewGuardRef.current.isCurrent(generation) || activeAccountId !== requestedAccountId || mailboxType !== requestedMailboxType) return false;
         setEmails(prev => { const ids = new Set(prev.map(e => e.id)); return [...prev, ...result.messages.filter(e => !ids.has(e.id))]; });
       }
@@ -1272,6 +1483,12 @@ export default function App() {
             </div>
           ) : (
             <>
+              {accounts.some(account => !credentialsByAccount[account.id]) && (
+                <div className="rounded-xl bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300 flex items-center justify-between gap-3">
+                  <span>Kayıtlı hesapların iletilerini görmek için yeniden oturum açın.</span>
+                  <button type="button" onClick={() => setIsMultiAccountModalOpen(true)} className="font-semibold underline">Hesap bağla</button>
+                </div>
+              )}
               {syncError && <p role="alert" className="text-sm text-rose-500">{syncError}</p>}
               <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-zinc-500 rounded-xl bg-zinc-500/[.06] px-3 py-2">
                 <span>{['inbox','sent','threats'].includes(activeTab) ? t('actions.loadedCount',{loaded:folderLoaded,total:folderTotal}) : t('actions.loaded',{count:filteredEmails.length})}</span>
@@ -1382,7 +1599,7 @@ export default function App() {
                             email={email}
                             isSelected={selectedEmailIds.has(email.id)}
                             onToggleSelect={handleToggleSelect}
-                            onOpenDetail={(item) => setDetailEmail(item)}
+                            onOpenDetail={handleOpenDetail}
                             onAnalyze={handleAnalyzeEmail}
                             onUnsubscribe={handleUnsubscribe}
                             onRequestTrash={handleRequestTrash}
@@ -1402,7 +1619,7 @@ export default function App() {
             </div>
           ) : (
             /* FLAT LIST VIEW */
-            <div className="space-y-6">{dateGroupedEmails.map(group=><section key={group.key}><h2 className="sticky top-0 z-10 py-2 px-1 text-xs font-bold uppercase tracking-widest opacity-55 backdrop-blur">{group.title}</h2><div className="space-y-2">{group.emails.map(email=><EmailCard key={email.id} email={email} isSelected={selectedEmailIds.has(email.id)} onToggleSelect={handleToggleSelect} onOpenDetail={(item)=>setDetailEmail(item)} onAnalyze={handleAnalyzeEmail} onUnsubscribe={handleUnsubscribe} onRequestTrash={handleRequestTrash} onReply={handleReplyEmail} onUpdateCategory={handleUpdateCategory} onMarkSafeArchive={handleMarkSafeArchive} onUnsubscribeAndPurge={handleUnsubscribeAndPurge} onOpenAssistant={aiEnabled?handleOpenAssistant:undefined} theme={theme}/>)}</div></section>)}</div>
+            <div className="space-y-6">{dateGroupedEmails.map(group=><section key={group.key}><h2 className="sticky top-0 z-10 py-2 px-1 text-xs font-bold uppercase tracking-widest opacity-55 backdrop-blur">{group.title}</h2><div className="space-y-2">{group.emails.map(email=><EmailCard key={email.id} email={email} isSelected={selectedEmailIds.has(email.id)} onToggleSelect={handleToggleSelect} onOpenDetail={handleOpenDetail} onAnalyze={handleAnalyzeEmail} onUnsubscribe={handleUnsubscribe} onRequestTrash={handleRequestTrash} onReply={handleReplyEmail} onUpdateCategory={handleUpdateCategory} onMarkSafeArchive={handleMarkSafeArchive} onUnsubscribeAndPurge={handleUnsubscribeAndPurge} onOpenAssistant={aiEnabled?handleOpenAssistant:undefined} theme={theme}/>)}</div></section>)}</div>
           )}
         </div>
         {filteredEmails.length>0&&<div className="flex items-center justify-center gap-3 py-4"><button aria-label={t('pagination.previous')} disabled={safeCurrentPage<=1||isSyncingEmails} onClick={()=>setCurrentPage(Math.max(1,safeCurrentPage-1))} className="inline-flex items-center gap-2 rounded-xl bg-zinc-500/10 px-4 py-2 text-sm disabled:opacity-35"><ChevronLeft size={16}/>{t('pagination.previous')}</button><span className="text-xs opacity-60">{safeCurrentPage} / {Math.max(totalPages,folderLoaded<folderTotal?safeCurrentPage+1:totalPages)}</span><button aria-label={t('pagination.next')} disabled={(safeCurrentPage>=totalPages&&folderLoaded>=folderTotal)||isSyncingEmails} onClick={()=>void handleNextPage()} className="inline-flex items-center gap-2 rounded-xl bg-zinc-500/10 px-4 py-2 text-sm disabled:opacity-35">{t('pagination.next')}<ChevronRight size={16}/></button></div>}
@@ -1428,6 +1645,7 @@ export default function App() {
         theme={theme}
         userLabels={userLabels}
         onToggleLabel={(emailId,labelId)=>setEmails(prev=>prev.map(email=>email.id!==emailId?email:{...email,labels:email.labels?.includes(`user:${labelId}`)?email.labels.filter(x=>x!==`user:${labelId}`):[...(email.labels||[]),`user:${labelId}`]}))}
+        onDownloadAttachment={handleDownloadAttachment}
       />
 
       {/* Auto-Rules & Future Categorization Modal */}
@@ -1579,9 +1797,12 @@ export default function App() {
       <ComposeModal
         isOpen={isComposeOpen}
         onClose={() => setIsComposeOpen(false)}
+        draft={composeDraft}
+        onDraftChange={setComposeDraft}
         accounts={accounts}
         contacts={knownContacts}
         credentials={credentialsByAccount}
+        onCredentialsUpdated={updateAccountCredentials}
         theme={theme}
         availableEmails={emails}
         initialForward={composeForwardEmail}
@@ -1597,9 +1818,12 @@ export default function App() {
         onClose={() => setIsReplyModalOpen(false)}
         email={replyModalEmail}
         initialDraft={replyModalDraft}
+        savedDraft={replyModalEmail ? replyDrafts[replyModalEmail.id] : undefined}
+        onDraftChange={handleReplyDraftChange}
         accounts={accounts}
         activeAccountId={activeAccountId === 'all' ? (accounts[0]?.id || '') : activeAccountId}
-        sessionCredentials={sessionCredentials}
+        credentialsByAccount={credentialsByAccount}
+        onCredentialsUpdated={updateAccountCredentials}
         onOpenAssistantForPolish={(draftText) => {
           setIsReplyModalOpen(false);
           if (replyModalEmail) {

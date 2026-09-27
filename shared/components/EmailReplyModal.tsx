@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   X,
@@ -14,6 +14,8 @@ import { EmailMessage, ConnectedAccount } from '../types';
 import { AppTheme } from './Header';
 import { safeFetchJson, extractErrorMessage } from '../services/apiClient';
 import { detectMailProvider } from '../../core/mail/providerManager';
+import { DynamicSyncCredentials, ensureFreshMicrosoftCredentials } from '../services/mailSyncService';
+import type { ReplyDraft } from '../services/localMailStore';
 
 interface EmailReplyModalProps {
   isOpen: boolean;
@@ -22,8 +24,10 @@ interface EmailReplyModalProps {
   accounts: ConnectedAccount[];
   activeAccountId: string;
   initialDraft?: string;
-  sessionCredentials?: { email: string; password?: string; accessToken?: string; host?: string; port?: number } | null;
-  accessToken?: string | null;
+  savedDraft?: ReplyDraft;
+  onDraftChange?: (emailId: string, draft: ReplyDraft | null) => void;
+  credentialsByAccount: Record<string, DynamicSyncCredentials>;
+  onCredentialsUpdated?: (accountId: string, credentials: DynamicSyncCredentials) => void;
   onSuccess?: (sentEmailId: string) => void;
   onSuccessSent?: (sentEmailId: string) => void;
   onOpenAssistantForPolish?: (draftText?: string) => void;
@@ -37,8 +41,10 @@ export const EmailReplyModal: React.FC<EmailReplyModalProps> = ({
   accounts,
   activeAccountId,
   initialDraft = '',
-  sessionCredentials,
-  accessToken,
+  savedDraft,
+  onDraftChange,
+  credentialsByAccount,
+  onCredentialsUpdated,
   onSuccess,
   onSuccessSent,
   onOpenAssistantForPolish,
@@ -53,15 +59,30 @@ export const EmailReplyModal: React.FC<EmailReplyModalProps> = ({
   const [selectedAccountId, setSelectedAccountId] = useState(activeAccountId);
   const [isSending, setIsSending] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const openedEmailId = useRef<string | null>(null);
+  const skipDraftWrite = useRef(false);
 
   useEffect(() => {
-    if (email) {
-      setToAddress(email.fromEmail || email.from || '');
-      setSubject(email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject || ''}`);
-      setBodyText(initialDraft || '');
+    if (!isOpen || !email) { openedEmailId.current = null; return; }
+    if (openedEmailId.current !== email.id) {
+      openedEmailId.current = email.id;
+      skipDraftWrite.current = true;
+      setSelectedAccountId(savedDraft?.accountId || email.accountId || activeAccountId);
+      setToAddress(savedDraft?.to || email.fromEmail || email.from || '');
+      setSubject(savedDraft?.subject || (email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject || ''}`));
+      setBodyText(initialDraft || savedDraft?.body || '');
       setStatusMessage(null);
     }
-  }, [email, initialDraft]);
+  }, [isOpen, email, initialDraft, savedDraft, activeAccountId]);
+
+  useEffect(() => {
+    if (!isOpen || !email || !onDraftChange) return;
+    if (skipDraftWrite.current) { skipDraftWrite.current = false; return; }
+    const defaultTo = email.fromEmail || email.from || '';
+    const defaultSubject = email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject || ''}`;
+    const changed = bodyText.trim() || toAddress !== defaultTo || subject !== defaultSubject;
+    onDraftChange(email.id, changed ? { accountId: selectedAccountId, to: toAddress, subject, body: bodyText } : null);
+  }, [isOpen, email, selectedAccountId, toAddress, subject, bodyText, onDraftChange]);
 
   if (!isOpen || !email) return null;
 
@@ -79,12 +100,15 @@ export const EmailReplyModal: React.FC<EmailReplyModalProps> = ({
     try {
       // Direct SMTP send using account configuration, session credentials, or standard defaults
       const imapCfg = (activeAccount?.imapConfig || {}) as any;
-      if ((!sessionCredentials?.password && !sessionCredentials?.accessToken) || sessionCredentials.email !== activeAccount?.email) throw new Error('Gönderen hesaba yeniden giriş yapın.');
+      const credentials = credentialsByAccount[selectedAccountId];
+      if ((!credentials?.password && !credentials?.accessToken) || credentials.email.toLowerCase() !== activeAccount?.email.toLowerCase()) throw new Error('Gönderen hesaba yeniden giriş yapın.');
+      const activeCredentials = await ensureFreshMicrosoftCredentials(credentials);
+      if (activeCredentials !== credentials) onCredentialsUpdated?.(selectedAccountId, activeCredentials);
       const discovered = detectMailProvider(activeAccount.email);
       const smtpHost = imapCfg.smtpHost || discovered.smtpHost;
       const smtpPort = imapCfg.smtpPort || discovered.smtpPort || 465;
-      const userAuth = imapCfg.username || imapCfg.auth?.user || sessionCredentials?.email || activeAccount?.email || '';
-      const passAuth = imapCfg.password || imapCfg.auth?.pass || sessionCredentials?.password;
+      const userAuth = imapCfg.username || activeCredentials.email;
+      const passAuth = activeCredentials.password;
 
       await safeFetchJson('/api/smtp/send', {
         method: 'POST',
@@ -93,18 +117,20 @@ export const EmailReplyModal: React.FC<EmailReplyModalProps> = ({
           config: {
             host: smtpHost,
             port: smtpPort,
-            secure: smtpPort === 465,
-            auth: sessionCredentials?.accessToken ? { user: userAuth, accessToken: sessionCredentials.accessToken } : { user: userAuth, pass: passAuth },
+            secure: imapCfg.smtpSecure ?? smtpPort === 465,
+            auth: activeCredentials.accessToken ? { user: userAuth, accessToken: activeCredentials.accessToken } : { user: userAuth, pass: passAuth },
           },
           mail: {
             to: toAddress,
             subject: subject,
             text: bodyText,
+            inReplyTo: email.messageId,
           },
         }),
       });
 
       setStatusMessage({ type: 'success', text: 'E-posta yanıtı başarıyla gönderildi!' });
+      onDraftChange?.(email.id, null);
       if (onSuccess) onSuccess(email.id);
       if (onSuccessSent) onSuccessSent(email.id);
 

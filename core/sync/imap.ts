@@ -11,6 +11,8 @@ export interface MailboxInfo {
   specialUse?: string;
   totalMessages?: number;
   unreadMessages?: number;
+  uidValidity?: string;
+  highestUid?: number;
 }
 
 export interface ImapConnectOptions {
@@ -26,6 +28,8 @@ export interface ImapConnectOptions {
   folders?: string[];
   syncAllFolders?: boolean;
   offset?: number;
+  sinceUid?: number;
+  expectedUidValidity?: string;
   accountId?: string;
   provider?: string;
 }
@@ -66,6 +70,7 @@ export interface FetchedImapMessage {
   snippet: string;
   bodyText?: string;
   bodyHtml?: string;
+  attachments?: Array<{ index: number; filename: string; contentType: string; size: number }>;
   headers?: string;
   listUnsubscribe?: string;
   isRead: boolean;
@@ -320,10 +325,12 @@ export async function fetchImapMessages(
   success: boolean;
   messages: FetchedImapMessage[];
   mailboxes: MailboxInfo[];
+  incremental: boolean;
   error?: string;
 }> {
   const client = buildImapClient(options);
   const accountId = options.accountId || 'acc-primary';
+  let incremental = false;
 
   try {
     await client.connect();
@@ -384,20 +391,31 @@ export async function fetchImapMessages(
         const info = mailboxInfos.find((m) => m.path === target.path);
         if (info) {
           info.totalMessages = total;
+          info.uidValidity = String((mailbox as any)?.uidValidity || '0');
+          info.highestUid = Math.max(0, Number((mailbox as any)?.uidNext || 1) - 1);
         }
 
-        const end = Math.max(0, total - (options.offset || 0));
-        if (end > 0) {
-          const limit = maxResults;
-          const start = Math.max(1, end - limit + 1);
-          const range = `${start}:${end}`;
+        const currentUidValidity = String((mailbox as any)?.uidValidity || '0');
+        const canIncrement = Boolean(options.folder && options.sinceUid && options.expectedUidValidity === currentUidValidity);
+        let range: string | null = null;
+        let fetchByUid = false;
+        if (canIncrement) {
+          incremental = true;
+          const matches: number[] = await (client as any).search({ uid: `${Number(options.sinceUid) + 1}:*` }, { uid: true });
+          const newest = (matches || []).filter(uid => uid > Number(options.sinceUid)).slice(-maxResults);
+          if (newest.length) { range = newest.join(','); fetchByUid = true; }
+        } else {
+          const end = Math.max(0, total - (options.offset || 0));
+          if (end > 0) range = `${Math.max(1, end - maxResults + 1)}:${end}`;
+        }
+        if (range) {
 
           for await (const msg of client.fetch(range, {
             envelope: true,
             source: true,
             flags: true,
             uid: true,
-          })) {
+          }, { uid: fetchByUid })) {
             try {
               const envelope = msg.envelope;
               const fromObj = envelope?.from?.[0];
@@ -418,8 +436,9 @@ export async function fetchImapMessages(
                 // Header hints
               }
 
-              // Deduplication ID incorporating account, folder, and UID
-              const stableId = `imap-${accountId}-${target.type}-${msg.uid}`;
+              // UID is only unique inside a mailbox and its UIDVALIDITY generation.
+              const uidValidity = String((mailbox as any)?.uidValidity || '0');
+              const stableId = `imap-${accountId}-${encodeURIComponent(target.path)}-${uidValidity}-${msg.uid}`;
 
               allMessages.push({
                 id: stableId,
@@ -436,6 +455,12 @@ export async function fetchImapMessages(
                 snippet: snippet || subject,
                 bodyText,
                 bodyHtml: typeof parsed.html === 'string' ? parsed.html : undefined,
+                attachments: parsed.attachments.map((attachment, index) => ({
+                  index,
+                  filename: attachment.filename || `attachment-${index + 1}`,
+                  contentType: attachment.contentType || 'application/octet-stream',
+                  size: attachment.size || attachment.content.length,
+                })),
                 listUnsubscribe: String(parsed.headers.get('list-unsubscribe') || ''),
                 isRead: msg.flags?.has('\\Seen') || false,
               });
@@ -459,6 +484,7 @@ export async function fetchImapMessages(
       success: true,
       messages: allMessages.sort((a, b) => Date.parse(b.date) - Date.parse(a.date)),
       mailboxes: mailboxInfos,
+      incremental,
     };
   } catch (err: any) {
     console.error('IMAP e-posta çekme hatası:', err);
@@ -466,6 +492,7 @@ export async function fetchImapMessages(
       success: false,
       messages: [],
       mailboxes: [],
+      incremental: false,
       error: formatImapError(err, options.host),
     };
   } finally {
@@ -476,6 +503,29 @@ export async function fetchImapMessages(
         client.close();
       } catch {}
     }
+  }
+}
+
+export async function fetchImapAttachment(options: ImapConnectOptions & { folder: string; uid: number; index: number }): Promise<{ filename: string; contentType: string; content: string }> {
+  const client = buildImapClient(options);
+  let lock: any = null;
+  try {
+    await client.connect();
+    lock = await client.getMailboxLock(options.folder);
+    const message: any = await client.fetchOne(options.uid, { source: true }, { uid: true });
+    if (!message?.source) throw new Error('Ek içeren ileti bulunamadı.');
+    const parsed = await simpleParser(message.source);
+    const attachment = parsed.attachments[options.index];
+    if (!attachment) throw new Error('Ek bulunamadı.');
+    if (attachment.content.length > 25 * 1024 * 1024) throw new Error('Ek 25 MB indirme sınırını aşıyor.');
+    return {
+      filename: (attachment.filename || `attachment-${options.index + 1}`).replace(/[\\/]/g, '_'),
+      contentType: attachment.contentType || 'application/octet-stream',
+      content: attachment.content.toString('base64'),
+    };
+  } finally {
+    try { lock?.release?.(); } catch {}
+    try { await client.logout(); } catch { try { client.close(); } catch {} }
   }
 }
 
