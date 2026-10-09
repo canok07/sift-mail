@@ -25,6 +25,7 @@ export interface DynamicSyncCredentials {
 export interface BackendSyncMessage {
   id: string;
   uid: number;
+  uidValidity?: string;
   messageId?: string;
   accountId?: string;
   subject: string;
@@ -151,6 +152,7 @@ export async function syncEmailsFromBackend(
         bodyHtml: m.bodyHtml,
         attachments: m.attachments || [],
         uid: m.uid,
+        uidValidity: m.uidValidity,
         messageId: m.messageId,
         listUnsubscribe: m.listUnsubscribe || '',
         isRead: Boolean(m.isRead),

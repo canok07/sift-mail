@@ -11,15 +11,34 @@ const fs=require('node:fs');
   page=await browser.newPage({viewport:{width:1280,height:900},locale:'tr-TR'});
   page.setDefaultTimeout(15000);
   const errors=[];let sentPayload=null,markReadPayload=null;page.on('pageerror',e=>errors.push(e.message));
-  await page.route('**/api/ai/providers-status',route=>route.fulfill({json:{success:true,providers:{gemini:{configured:false,source:'none'},openai:{configured:false,source:'none'},anthropic:{configured:false,source:'none'},ollama:{configured:false,source:'none'}}}}));
-  await page.route('**/api/ai/test-connection',route=>route.fulfill({json:{success:true,message:'Google Gemini bağlantısı başarılı!'}}));
-  await page.route('**/api/ai/save-config',route=>route.fulfill({json:{success:true,message:'GEMINI ayarları kaydedildi.'}}));
+  const plugins=['gemini','openai','anthropic','ollama','jev'].map(id=>({id,name:id,kind:id==='jev'?'decision-provider':'ai-provider',capabilities:['classify'],enabled:false,status:'NOT_CONFIGURED',configuration:{model:'fixture-model'}}));
+  let configuredCount=0;
+  await page.route('**/api/plugins',route=>route.fulfill({json:{success:true,plugins}}));
+  await page.route('**/api/plugins/*/*',async route=>{
+   const [,id,action]=new URL(route.request().url()).pathname.match(/\/api\/plugins\/([^/]+)\/([^/]+)/);
+   const plugin=plugins.find(p=>p.id===id),body=route.request().postDataJSON()||{};
+   let result={...plugin};
+   if(action==='configure'){configuredCount++;plugin.status='CONFIGURED';plugin.enabled=false;}
+   if(action==='test'){
+    if(!Object.values(body).some(Boolean))plugin.status='DISABLED';
+    result={...plugin,status:'CONNECTED',message:'Fixture connection verified'};
+   }else if(action==='enable'){plugin.status='CONNECTED';plugin.enabled=true;result={...plugin};}
+   else if(action==='disable'){plugin.status='DISABLED';plugin.enabled=false;result={...plugin};}
+   else result={...plugin};
+   await route.fulfill({json:{success:true,plugin:result}});
+  });
   await page.route('**/api/smtp/send',async route=>{sentPayload=route.request().postDataJSON();await route.fulfill({json:{success:true,messageId:'fixture-message'}})});
   await page.route('**/api/imap/action',async route=>{markReadPayload=route.request().postDataJSON();await route.fulfill({json:{success:true,verified:true}})});
   await page.route('**/api/imap/attachment',async route=>route.fulfill({json:{success:true,filename:'fixture.txt',contentType:'text/plain',content:Buffer.from('attachment fixture').toString('base64')}}));
+  const rawMessage=Buffer.from('From: sender@example.com\r\nTo: fixture@gmail.com\r\nSubject: Fixture spam\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nOriginal fixture message\r\n');
+  await page.route('**/api/imap/raw-message',async route=>{
+   const body=route.request().postDataJSON();
+   assertFixture(body.expectedUidValidity==='123' && body.folder==='spam','Original MIME request must preserve mailbox identity');
+   await route.fulfill({json:{success:true,filename:'Fixture spam.eml',contentType:'message/rfc822',content:rawMessage.toString('base64'),size:rawMessage.length}});
+  });
   await page.route('**/api/emails/sync',async route=>{
    const body=route.request().postDataJSON();
-   const make=(type,id)=>({id,uid:1,accountId:body.accountId,folder:type==='inbox'?'INBOX':type,folderType:type,from:'Fixture Sender',fromName:'Fixture Sender',fromEmail:'sender@example.com',subject:'Fixture '+type,bodyText:'Vielen Dank für Ihre Nachricht. '+ 'Full content '.repeat(50),bodyHtml:'<p>Vielen Dank für Ihre Nachricht.</p><script>parent.hacked=true</script>',snippet:'Vielen Dank für Ihre Nachricht.',date:'2026-09-18T12:00:00Z',isRead:false,attachments:type==='spam'?[{index:0,filename:'fixture.txt',contentType:'text/plain',size:18}]:[]});
+   const make=(type,id)=>({id,uid:1,uidValidity:'123',accountId:body.accountId,folder:type==='inbox'?'INBOX':type,folderType:type,from:'Fixture Sender',fromName:'Fixture Sender',fromEmail:'sender@example.com',subject:'Fixture '+type,bodyText:'Vielen Dank für Ihre Nachricht. '+ 'Full content '.repeat(50),bodyHtml:'<p>Vielen Dank für Ihre Nachricht.</p><script>parent.hacked=true</script>',snippet:'Vielen Dank für Ihre Nachricht.',date:'2026-09-18T12:00:00Z',isRead:false,attachments:type==='spam'?[{index:0,filename:'fixture.txt',contentType:'text/plain',size:18}]:[]});
    const inbox=Array.from({length:12},(_,index)=>({...make('inbox',`in-${index+1}`),uid:index+1,subject:`Fixture inbox ${String(index+1).padStart(2,'0')}`,date:new Date(Date.UTC(2026,8,18,12,index)).toISOString()}));
    await route.fulfill({json:{success:true,messages:body.offset?[]:[...inbox,make('sent','sent'),make('spam','spam')],mailboxes:[{path:'INBOX',type:'inbox',name:'INBOX',totalMessages:12},{path:'sent',type:'sent',name:'Sent',totalMessages:1},{path:'spam',type:'spam',name:'Spam',totalMessages:1}],account:{email:body.email,provider:'gmail'}}});
   });
@@ -59,7 +78,7 @@ const fs=require('node:fs');
   await page.getByRole('button',{name:'Oluştur',exact:true}).click();
   await page.getByPlaceholder('ad@example.com').fill('receiver@example.com');
   await page.getByTestId('compose-modal').getByPlaceholder('Konu',{exact:true}).fill('Ekli test iletisi');
-  await page.getByTestId('compose-modal').getByPlaceholder('İleti',{exact:true}).fill('Merhaba, bu bir test iletisidir.');
+  await page.getByTestId('compose-modal').getByRole('textbox',{name:'İleti',exact:true}).fill('Merhaba, bu bir test iletisidir.');
   await page.getByRole('button',{name:'Cc / Bcc'}).click();
   await expect(page.getByText('Bcc',{exact:true})).toBeVisible();
   await page.getByTitle('E-posta ekle').click();
@@ -68,6 +87,7 @@ const fs=require('node:fs');
   await page.getByRole('button',{name:'Gönder',exact:true}).click();
   await expect(page.getByTestId('compose-modal')).toHaveCount(0);
   if(!sentPayload?.mail?.attachments?.[0]?.content||sentPayload.mail.attachments[0].contentType!=='message/rfc822')throw new Error('Attached email was not sent as .eml');
+  assertFixture(Buffer.from(sentPayload.mail.attachments[0].content,'base64').equals(rawMessage),'Attached EML must match original MIME bytes');
   await page.getByRole('button',{name:'Etiket oluştur'}).click();
   await page.getByPlaceholder('Etiket adı').fill('Önemli');
   await page.keyboard.press('Enter');
@@ -101,10 +121,15 @@ const fs=require('node:fs');
   await page.keyboard.press('Escape');
   await page.getByTitle('Ayarlar',{exact:true}).click();
   await page.getByRole('button',{name:'Yapay Zekâ',exact:true}).click();
-  await page.getByPlaceholder('API anahtarı').fill('fixture-api-key');
-  await page.getByRole('button',{name:'Bağlantıyı test et'}).click();
-  await expect(page.getByText('Google Gemini bağlantısı başarılı!')).toBeVisible();
-  await page.getByRole('button',{name:/Bağla ve güvenli kaydet/}).click();
+  const gemini=page.getByTestId('plugin-gemini');
+  await gemini.getByRole('button',{name:'Yapılandır',exact:true}).click();
+  await gemini.getByPlaceholder('API anahtarı').fill('fixture-api-key');
+  await gemini.getByRole('button',{name:'Test et',exact:true}).click();
+  await expect(page.getByText('Fixture connection verified')).toBeVisible();
+  assertFixture(configuredCount===0 && !plugins[0].enabled,'Dry-run test must not save credentials or enable AI');
+  await gemini.getByRole('button',{name:/Bağla ve güvenli kaydet/}).click();
+  await expect(gemini.getByRole('button',{name:'Devre dışı bırak',exact:true})).toBeVisible();
+  assertFixture(configuredCount===1 && plugins[0].enabled,'Explicit connection must save and enable the provider');
   await page.getByRole('button',{name:'Entegrasyonlar',exact:true}).click();
   await expect(page.getByTestId('plugin-jev')).toBeVisible();
   await expect(page.getByTestId('plugin-gemini')).toBeVisible();
@@ -118,3 +143,4 @@ const fs=require('node:fs');
  } catch(error) { if(page) { console.error((await page.locator('body').innerText()).slice(0,5000)); fs.mkdirSync('test-results',{recursive:true}); await page.screenshot({path:'test-results/failure.png'}); } throw error; }
  finally {if(browser)await browser.close();child.kill();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
+function assertFixture(condition,message){if(!condition)throw new Error(message);}

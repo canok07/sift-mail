@@ -101,6 +101,7 @@ export interface EmailMessage {
   threadId?: string;
   messageId?: string;
   uid?: number;
+  uidValidity?: string;
   accountId?: string;
   provider?: MailProvider;
   folder?: string;

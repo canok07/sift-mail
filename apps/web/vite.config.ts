@@ -52,21 +52,6 @@ export default defineConfig(() => {
           navigateFallbackDenylist: [/^\/oauth\/microsoft\/callback(?:\?|$)/],
           runtimeCaching: [
             {
-              // Cache NLP email analysis responses so analyzed emails can be read offline
-              urlPattern: /\/api\/analyze-.*/i,
-              handler: 'NetworkFirst',
-              options: {
-                cacheName: 'gemini-nlp-analysis-cache',
-                expiration: {
-                  maxEntries: 200,
-                  maxAgeSeconds: 60 * 60 * 24 * 14, // 14 days
-                },
-                cacheableResponse: {
-                  statuses: [0, 200],
-                },
-              },
-            },
-            {
               // Cache app icons and UI assets
               urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp|ico)$/i,
               handler: 'CacheFirst',

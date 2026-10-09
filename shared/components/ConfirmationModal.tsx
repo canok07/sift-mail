@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Trash2, X, RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ConfirmationModalProps } from '../types';
@@ -21,6 +21,19 @@ export const ConfirmationModal: React.FC<ExtendedConfirmationModalProps> = ({
   theme = 'light',
 }) => {
   const { t } = useTranslation();
+  const running = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => { if (isOpen) setError(''); }, [isOpen]);
+  const confirm = async () => {
+    if (running.current) return;
+    running.current = true;
+    setBusy(true);
+    setError('');
+    try { await onConfirm(); }
+    catch { setError(t('mailActions.failed')); }
+    finally { running.current = false; setBusy(false); }
+  };
 
   if (!isOpen) return null;
 
@@ -61,6 +74,7 @@ export const ConfirmationModal: React.FC<ExtendedConfirmationModalProps> = ({
             </div>
           </div>
           <button
+            disabled={busy}
             onClick={onCancel}
             className="opacity-70 hover:opacity-100 p-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
           >
@@ -71,10 +85,12 @@ export const ConfirmationModal: React.FC<ExtendedConfirmationModalProps> = ({
         <p className="text-sm opacity-80 leading-relaxed mb-6">
           {description}
         </p>
+        {error && <p role="alert" className="text-sm text-rose-500 mb-4">{error}</p>}
 
         <div className="flex items-center justify-end gap-3">
           <button
             type="button"
+            disabled={busy}
             onClick={onCancel}
             className="px-5 py-3 text-xs font-bold rounded-2xl opacity-75 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10 transition-colors min-h-[48px]"
           >
@@ -82,7 +98,8 @@ export const ConfirmationModal: React.FC<ExtendedConfirmationModalProps> = ({
           </button>
           <button
             type="button"
-            onClick={onConfirm}
+            disabled={busy}
+            onClick={() => void confirm()}
             className={`px-5 py-3 text-xs font-bold text-white rounded-2xl shadow-xs transition-colors min-h-[48px] ${
               isDestructive
                 ? 'bg-rose-600 hover:bg-rose-500'

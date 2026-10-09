@@ -58,6 +58,7 @@ export interface ImapActionOptions extends ImapConnectOptions {
 export interface FetchedImapMessage {
   id: string;
   uid: number;
+  uidValidity?: string;
   messageId?: string;
   accountId?: string;
   folder: string;
@@ -443,6 +444,7 @@ export async function fetchImapMessages(
               allMessages.push({
                 id: stableId,
                 uid: msg.uid,
+                uidValidity,
                 messageId: envelope?.messageId || undefined,
                 accountId,
                 folder: target.path,
@@ -503,6 +505,32 @@ export async function fetchImapMessages(
         client.close();
       } catch {}
     }
+  }
+}
+
+export async function fetchRawImapMessage(options: ImapConnectOptions & { folder: string; uid: number; messageId?: string; maxBytes?: number }): Promise<{ filename: string; contentType: string; content: string; size: number }> {
+  const client = buildImapClient(options);
+  let lock: any = null;
+  try {
+    await client.connect();
+    lock = await client.getMailboxLock(options.folder);
+    if (options.expectedUidValidity && String((client.mailbox as any)?.uidValidity) !== options.expectedUidValidity) throw new Error('IMAP_UIDVALIDITY_CHANGED');
+    if (!options.expectedUidValidity && !options.messageId) throw new Error('IMAP_MESSAGE_IDENTITY_REQUIRED');
+    const limit = Math.min(options.maxBytes ?? 25 * 1024 * 1024, 25 * 1024 * 1024);
+    const metadata: any = await client.fetchOne(options.uid, { size: true, envelope: true }, { uid: true });
+    if (!metadata) throw new Error('IMAP_MESSAGE_NOT_FOUND');
+    if (options.messageId && metadata.envelope?.messageId !== options.messageId) throw new Error('IMAP_MESSAGE_IDENTITY_CHANGED');
+    if (!Number.isInteger(metadata.size) || metadata.size < 1 || metadata.size > limit) throw new Error('IMAP_MESSAGE_TOO_LARGE');
+    // ImapFlow uses BODY.PEEK[] by default: downloading never marks the original read.
+    const message: any = await client.fetchOne(options.uid, { source: true }, { uid: true });
+    if (!message?.source) throw new Error('IMAP_MESSAGE_NOT_FOUND');
+    const source = Buffer.from(message.source);
+    if (source.length > limit) throw new Error('IMAP_MESSAGE_TOO_LARGE');
+    const subject = String(metadata.envelope?.subject || `email-${options.uid}`).replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').slice(0,80) || 'email';
+    return { filename: `${subject}.eml`, contentType: 'message/rfc822', content: source.toString('base64'), size: source.length };
+  } finally {
+    try { lock?.release?.(); } catch {}
+    try { await client.logout(); } catch { try { client.close(); } catch {} }
   }
 }
 
@@ -578,6 +606,7 @@ export async function testSmtpConnection(
     host: options.host,
     port: options.port,
     secure: options.secure,
+    requireTLS: !options.secure,
     auth: authConfig,
     tls: getTlsOptions(),
   });
@@ -593,6 +622,8 @@ export async function testSmtpConnection(
       success: false,
       message: err.message || 'SMTP sunucusuna bağlanılamadı.',
     };
+  } finally {
+    transporter.close();
   }
 }
 
@@ -625,6 +656,7 @@ export async function sendSmtpMessage(
     host: options.host,
     port: options.port,
     secure: options.secure,
+    requireTLS: !options.secure,
     auth: authConfig,
     tls: getTlsOptions(),
   });

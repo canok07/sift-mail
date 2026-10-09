@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import crypto from 'crypto';
 import { deleteVaultSecret, getVaultSecret, saveVaultSecret } from '../security/vault';
-import { getAiProvidersStatus, testAiProviderConnection } from '../ai/multiModelService';
+import { getAiProviderStatus, resolveOllamaEndpoint, testAiProviderConnection } from '../ai/multiModelService';
 
 export type PluginKind = 'ai-provider' | 'decision-provider';
 export type PluginStatus = 'NOT_CONFIGURED' | 'CONFIGURED' | 'CONNECTED' | 'DISABLED' | 'ERROR';
@@ -15,6 +15,7 @@ export interface PluginDescriptor {
   enabled: boolean;
   status: PluginStatus;
   message?: string;
+  configuration?: { model: string; endpoint?: string };
 }
 
 export const DecisionOutputSchema = z.object({
@@ -40,7 +41,7 @@ export interface SiftPlugin {
   readonly capabilities: PluginCapability[];
   describe(): PluginDescriptor;
   configure(config: { apiKey?: string; endpoint?: string; model?: string }): Promise<PluginDescriptor>;
-  test(): Promise<PluginDescriptor>;
+  test(config?: { apiKey?: string; endpoint?: string; model?: string }): Promise<PluginDescriptor>;
   enable(): Promise<PluginDescriptor>;
   disable(): Promise<PluginDescriptor>;
 }
@@ -59,24 +60,38 @@ class AIProviderPlugin implements SiftPlugin {
   readonly kind = 'ai-provider' as const;
   readonly capabilities: PluginCapability[] = ['generate','summarize','classify','draft-reply'];
   constructor(readonly id:'gemini'|'openai'|'anthropic'|'ollama', readonly name:string) {}
-  private configured() { return Boolean(getAiProvidersStatus()[this.id]?.configured); }
+  private configured() { return getAiProviderStatus(this.id).configured; }
   describe(): PluginDescriptor {
-    const configured=this.configured(), enabled=configured&&getVaultSecret(`plugin_${this.id}_enabled`)!=='false', tested=boolSecret(`plugin_${this.id}_tested`);
-    return {id:this.id,name:this.name,kind:this.kind,capabilities:this.capabilities,enabled,status:!configured?'NOT_CONFIGURED':!enabled?'DISABLED':tested?'CONNECTED':'CONFIGURED'};
+    const provider=getAiProviderStatus(this.id), configured=provider.configured;
+    const tested=provider.connected, disabled=provider.disabled, failed=provider.failed, enabled=provider.enabled;
+    return {id:this.id,name:this.name,kind:this.kind,capabilities:this.capabilities,enabled,
+      status:!configured?'NOT_CONFIGURED':failed?'ERROR':!tested?'CONFIGURED':disabled?'DISABLED':'CONNECTED',
+      configuration:{model:provider.defaultModel,...(this.id==='ollama'?{endpoint:resolveOllamaEndpoint()}: {})}};
   }
   async configure(config:{apiKey?:string;endpoint?:string;model?:string}) {
+    const endpoint=this.id==='ollama'?resolveOllamaEndpoint(config.endpoint):undefined;
+    if(config.endpoint&&this.id!=='ollama')throw new Error('PLUGIN_CUSTOM_ENDPOINT_UNSUPPORTED');
     if(config.apiKey){const key=this.id==='gemini'?'gemini_custom_api_key':`${this.id}_api_key`;saveVaultSecret(key,config.apiKey,'custom_token',`${this.name} API Key`)}
-    if(config.endpoint)saveVaultSecret(`${this.id}_endpoint`,config.endpoint,'custom_token',`${this.name} endpoint`);
+    if(endpoint)saveVaultSecret(`${this.id}_endpoint`,endpoint,'custom_token',`${this.name} endpoint`);
     if(config.model)saveVaultSecret(`${this.id}_model`,config.model,'custom_token',`${this.name} model`);
-    deleteVaultSecret(`plugin_${this.id}_tested`); return this.describe();
+    deleteVaultSecret(`plugin_${this.id}_tested`); deleteVaultSecret(`plugin_${this.id}_test_failed`);
+    setEnabled(this.id,false); return this.describe();
   }
-  async test() {
-    const result=await testAiProviderConnection({provider:this.id,endpoint:getVaultSecret(`${this.id}_endpoint`)||undefined,model:getVaultSecret(`${this.id}_model`)||undefined});
+  async test(config?:{apiKey?:string;endpoint?:string;model?:string}) {
+    const temporary=Boolean(config && Object.values(config).some(Boolean));
+    const result=await testAiProviderConnection({provider:this.id,
+      ...config,
+      endpoint:config?.endpoint||getVaultSecret(`${this.id}_endpoint`)||undefined,
+      model:config?.model||getVaultSecret(`${this.id}_model`)||undefined});
+    // Testing edited inputs is deliberately read-only; a successful dry run is
+    // not evidence that the saved configuration is connected.
+    if(temporary)return {...this.describe(),message:result.message,status:result.success?'CONNECTED':'ERROR'} as PluginDescriptor;
     if(result.success)saveVaultSecret(`plugin_${this.id}_tested`,'true','custom_token',`${this.name} tested`);
-    else deleteVaultSecret(`plugin_${this.id}_tested`);
-    return {...this.describe(),status:result.success?'CONNECTED':'ERROR',message:result.message} as PluginDescriptor;
+    else {deleteVaultSecret(`plugin_${this.id}_tested`);setEnabled(this.id,false)}
+    saveVaultSecret(`plugin_${this.id}_test_failed`,String(!result.success),'custom_token',`${this.name} connection failed`);
+    return {...this.describe(),message:result.message} as PluginDescriptor;
   }
-  async enable(){if(!this.configured())throw new Error('PLUGIN_NOT_CONFIGURED');setEnabled(this.id,true);return this.describe()}
+  async enable(){if(!this.configured())throw new Error('PLUGIN_NOT_CONFIGURED');if(!boolSecret(`plugin_${this.id}_tested`))throw new Error('PLUGIN_TEST_REQUIRED');setEnabled(this.id,true);return this.describe()}
   async disable(){setEnabled(this.id,false);return this.describe()}
 }
 
@@ -110,10 +125,10 @@ export class PluginManager {
   list(){return [...this.plugins.values()].map(plugin=>plugin.describe())}
   get(id:string){const plugin=this.plugins.get(id);if(!plugin)throw new Error('PLUGIN_NOT_FOUND');return plugin}
   getRuns(){return [...this.runs].reverse()}
-  private async isolated<T>(pluginId:string,operation:string,work:()=>Promise<T>):Promise<T>{const started=Date.now();try{const value=await work();this.record(pluginId,operation,started,'completed');return value}catch(error:any){this.record(pluginId,operation,started,'failed',String(error?.message||'PLUGIN_FAILED'));throw error}}
+  private async isolated<T>(pluginId:string,operation:string,work:()=>Promise<T>):Promise<T>{const started=Date.now();try{const value=await work();this.record(pluginId,operation,started,'completed');return value}catch(error:any){this.record(pluginId,operation,started,'failed','PLUGIN_FAILED');throw error}}
   private record(pluginId:string,operation:string,started:number,status:PluginRun['status'],errorCode?:string){this.runs.push({id:crypto.randomUUID(),pluginId,operation,startedAt:new Date(started).toISOString(),durationMs:Date.now()-started,status,errorCode});this.runs=this.runs.slice(-100)}
   configure(id:string,config:{apiKey?:string;endpoint?:string;model?:string}){return this.isolated(id,'configure',()=>this.get(id).configure(config))}
-  test(id:string){return this.isolated(id,'test',()=>this.get(id).test())}
+  test(id:string,config?:{apiKey?:string;endpoint?:string;model?:string}){return this.isolated(id,'test',()=>this.get(id).test(config))}
   enable(id:string){return this.isolated(id,'enable',()=>this.get(id).enable())}
   disable(id:string){return this.isolated(id,'disable',()=>this.get(id).disable())}
   async decide(id:string,input:DecisionInput):Promise<{provider:string;decision:DecisionOutput;fallback:boolean}>{

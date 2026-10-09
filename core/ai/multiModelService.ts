@@ -1,6 +1,7 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { getVaultSecret, saveVaultSecret } from '../security/vault';
 import { AiAnalysisResultSchema } from '../security/validation';
+import { sanitizeEmailForAI } from './privacy';
 
 export interface MultiModelEmailPayload {
   from: string;
@@ -12,6 +13,7 @@ export interface MultiModelEmailPayload {
   ollamaEndpoint?: string;
   modelName?: string;
   customApiKey?: string;
+  allowCloudEmailBody?: boolean;
 }
 
 function ensureProviderEnabled(provider: MultiModelEmailPayload['provider']) {
@@ -75,56 +77,32 @@ async function generateGeminiWithResilience(
 /**
  * Normalizes and validates AI output against AiAnalysisResultSchema
  */
-export function normalizeAiResult(raw: any, fallbackSubject: string = ''): any {
-  const safeData: any = {
-    summary: raw.summary || (raw.reasoning ? raw.reasoning.slice(0, 150) : fallbackSubject || 'E-posta incelendi.'),
-    category: raw.category || raw.safeCategory || 'other',
-    priority: ['low', 'medium', 'high', 'urgent'].includes(raw.priority) ? raw.priority : 'medium',
-    phishingRisk: ['safe', 'suspicious', 'dangerous'].includes(raw.phishingRisk)
-      ? raw.phishingRisk
-      : raw.classification === 'phishing'
-      ? 'dangerous'
-      : raw.classification === 'spam'
-      ? 'suspicious'
-      : 'safe',
-    classification: ['safe', 'newsletter', 'spam', 'phishing'].includes(raw.classification)
-      ? raw.classification
-      : raw.isSafe === false
-      ? 'spam'
-      : 'safe',
-    isSafe: typeof raw.isSafe === 'boolean' ? raw.isSafe : true,
-    safetyScore: typeof raw.safetyScore === 'number' ? Math.max(0, Math.min(100, raw.safetyScore)) : 85,
-    threatLevel: ['none', 'low', 'medium', 'high', 'critical'].includes(raw.threatLevel)
-      ? raw.threatLevel
-      : 'none',
-    safeCategory: ['work', 'finance', 'shopping', 'official', 'personal', 'travel', 'other'].includes(
-      raw.safeCategory || raw.category
-    )
-      ? raw.safeCategory || raw.category
-      : 'other',
-    categoryConfidence: typeof raw.categoryConfidence === 'number' ? raw.categoryConfidence : 85,
-    isSubscription: Boolean(raw.isSubscription),
-    unsubscribeUrl: typeof raw.unsubscribeUrl === 'string' ? raw.unsubscribeUrl : '',
-    reasoning: raw.reasoning || 'Kural motoru ve dil modeli tarafından analiz tamamlandı.',
-    keyFindings: Array.isArray(raw.keyFindings) ? raw.keyFindings : ['İleti tarandı'],
-    suggestedAction: ['keep_safe', 'reply', 'unsubscribe', 'trash', 'block_spam'].includes(raw.suggestedAction)
-      ? raw.suggestedAction
-      : 'keep_safe',
-    draftReply: typeof raw.draftReply === 'string' ? raw.draftReply : '',
-  };
+export function normalizeAiResult(raw: unknown, _fallbackSubject = '') {
+  const parsed = AiAnalysisResultSchema.safeParse(raw);
+  if (!parsed.success) throw new Error('AI_INVALID_OUTPUT');
+  return parsed.data;
+}
 
-  const parsed = AiAnalysisResultSchema.safeParse(safeData);
-  if (parsed.success) {
-    return parsed.data;
+export function resolveOllamaEndpoint(endpoint?: string): string {
+  const resolved = endpoint || getVaultSecret('ollama_endpoint') || 'http://localhost:11434';
+  const url = new URL(resolved);
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
+    throw new Error('AI_INVALID_ENDPOINT');
   }
-  return safeData;
+  return url.toString().replace(/\/$/, '');
+}
+
+/** Do not follow redirects: loopback requests must never become cloud requests. */
+function providerFetch(url: string, init: RequestInit = {}) {
+  return fetch(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(30000) });
 }
 
 export async function analyzeWithMultiModel(payload: MultiModelEmailPayload): Promise<any> {
   const provider = payload.provider || 'gemini';
   ensureProviderEnabled(provider);
   const configuredModel = payload.modelName || getVaultSecret(`${provider}_model`) || undefined;
-  const configuredEndpoint = payload.ollamaEndpoint || getVaultSecret('ollama_endpoint') || undefined;
+  const configuredEndpoint = provider === 'ollama' ? resolveOllamaEndpoint(payload.ollamaEndpoint) : undefined;
+  payload = sanitizeEmailForAI(payload, provider, payload.allowCloudEmailBody, configuredEndpoint);
 
   const userContent = `
 E-posta Analiz Talebi:
@@ -172,7 +150,7 @@ export async function generateAssistantText(params: {
   if (params.provider === 'gemini') {
     const apiKey = getVaultSecret('gemini_custom_api_key') || process.env.GEMINI_API_KEY || '';
     if (!apiKey) throw new Error('Gemini API anahtarı bulunamadı.');
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey, httpOptions: { timeout: 30000 } });
     const { response } = await generateGeminiWithResilience(ai, {
       model: modelName || 'gemini-3.8-flash', contents: params.prompt,
       config: { systemInstruction: params.systemInstruction, temperature: 0.5 },
@@ -182,19 +160,19 @@ export async function generateAssistantText(params: {
   if (params.provider === 'openai') {
     const key = getVaultSecret('openai_api_key') || process.env.OPENAI_API_KEY;
     if (!key) throw new Error('OpenAI API anahtarı bulunamadı.');
-    const response = await fetch('https://api.openai.com/v1/chat/completions', { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${key}`}, body:JSON.stringify({model:modelName||'gpt-4o-mini',messages:[{role:'system',content:params.systemInstruction},{role:'user',content:params.prompt}],temperature:0.5}) });
+    const response = await providerFetch('https://api.openai.com/v1/chat/completions', { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${key}`}, body:JSON.stringify({model:modelName||'gpt-4o-mini',messages:[{role:'system',content:params.systemInstruction},{role:'user',content:params.prompt}],temperature:0.5}) });
     if (!response.ok) throw new Error(`OpenAI yanıt vermedi (HTTP ${response.status}).`);
     const data = await response.json(); return data.choices?.[0]?.message?.content || '';
   }
   if (params.provider === 'anthropic') {
     const key = getVaultSecret('anthropic_api_key') || process.env.ANTHROPIC_API_KEY;
     if (!key) throw new Error('Anthropic API anahtarı bulunamadı.');
-    const response = await fetch('https://api.anthropic.com/v1/messages', { method:'POST', headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01'}, body:JSON.stringify({model:modelName||'claude-3-5-haiku-20241022',max_tokens:1800,system:params.systemInstruction,messages:[{role:'user',content:params.prompt}]}) });
+    const response = await providerFetch('https://api.anthropic.com/v1/messages', { method:'POST', headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01'}, body:JSON.stringify({model:modelName||'claude-3-5-haiku-20241022',max_tokens:1800,system:params.systemInstruction,messages:[{role:'user',content:params.prompt}]}) });
     if (!response.ok) throw new Error(`Anthropic yanıt vermedi (HTTP ${response.status}).`);
     const data = await response.json(); return data.content?.[0]?.text || '';
   }
-  const endpoint = (params.ollamaEndpoint || getVaultSecret('ollama_endpoint') || 'http://localhost:11434').replace(/\/$/, '');
-  const response = await fetch(`${endpoint}/api/chat`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({model:modelName||'llama3',stream:false,messages:[{role:'system',content:params.systemInstruction},{role:'user',content:params.prompt}]}) });
+  const endpoint = resolveOllamaEndpoint(params.ollamaEndpoint);
+  const response = await providerFetch(`${endpoint}/api/chat`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({model:modelName||'llama3',stream:false,messages:[{role:'system',content:params.systemInstruction},{role:'user',content:params.prompt}]}) });
   if (!response.ok) throw new Error(`Ollama yanıt vermedi (HTTP ${response.status}).`);
   const data = await response.json(); return data.message?.content || '';
 }
@@ -211,7 +189,7 @@ async function analyzeWithGemini(payload: MultiModelEmailPayload): Promise<any> 
     throw new Error('Gemini API anahtarı bulunamadı. Lütfen Ayarlar üzerinden Gemini API anahtarınızı girin.');
   }
 
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({ apiKey, httpOptions: { timeout: 30000 } });
   const modelName = payload.modelName || 'gemini-3.8-flash';
 
   const prompt = `
@@ -282,7 +260,7 @@ async function analyzeWithOpenAI(
 
   const model = modelName || 'gpt-4o-mini';
 
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+  const res = await providerFetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -301,7 +279,7 @@ async function analyzeWithOpenAI(
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    const msg = errorData?.error?.message || `HTTP ${res.status}`;
+    const msg = `HTTP ${res.status}`;
     if (res.status === 401) {
       throw new Error('OpenAI kimlik doğrulaması başarısız: Geçersiz API anahtarı.');
     }
@@ -329,7 +307,7 @@ async function analyzeWithAnthropic(
 
   const model = modelName || 'claude-3-5-haiku-20241022';
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const res = await providerFetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -351,7 +329,7 @@ async function analyzeWithAnthropic(
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    const msg = errorData?.error?.message || `HTTP ${res.status}`;
+    const msg = `HTTP ${res.status}`;
     if (res.status === 401) {
       throw new Error('Anthropic kimlik doğrulaması başarısız: Geçersiz x-api-key.');
     }
@@ -373,12 +351,12 @@ async function analyzeWithOllama(
   endpoint: string,
   modelName?: string
 ): Promise<any> {
-  const cleanEndpoint = (endpoint || 'http://localhost:11434').replace(/\/$/, '');
+  const cleanEndpoint = resolveOllamaEndpoint(endpoint);
   const targetUrl = `${cleanEndpoint}/api/chat`;
   const model = modelName || 'llama3';
 
   try {
-    const res = await fetch(targetUrl, {
+    const res = await providerFetch(targetUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -397,7 +375,7 @@ async function analyzeWithOllama(
       if (res.status === 404 || errText.includes('not found')) {
         throw new Error(`Ollama model '${model}' bulunamadı. Lütfen terminalde 'ollama pull ${model}' çalıştırın.`);
       }
-      throw new Error(`Ollama hatası (${res.status}): ${errText || 'Servis yanıt vermedi'}`);
+      throw new Error(`Ollama hatası (HTTP ${res.status}).`);
     }
 
     const data = await res.json();
@@ -422,7 +400,8 @@ export async function testAiProviderConnection(params: {
   endpoint?: string;
   model?: string;
 }): Promise<{ success: boolean; message: string; details?: any }> {
-  const { provider, apiKey, endpoint, model } = params;
+  const { provider, apiKey, endpoint } = params;
+  const model = params.model || getVaultSecret(`${provider}_model`) || undefined;
 
   try {
     switch (provider) {
@@ -431,7 +410,7 @@ export async function testAiProviderConnection(params: {
         if (!key) {
           return { success: false, message: 'Gemini API anahtarı boş olamaz.' };
         }
-        const ai = new GoogleGenAI({ apiKey: key });
+        const ai = new GoogleGenAI({ apiKey: key, httpOptions: { timeout: 30000 } });
         const { response: res, model: usedModel, usedFallback } = await generateGeminiWithResilience(ai, {
           model: model || 'gemini-3.8-flash',
           contents: 'Ping',
@@ -452,7 +431,7 @@ export async function testAiProviderConnection(params: {
         if (!key) {
           return { success: false, message: 'OpenAI API anahtarı boş olamaz.' };
         }
-        const res = await fetch('https://api.openai.com/v1/models', {
+        const res = await providerFetch('https://api.openai.com/v1/models', {
           headers: { Authorization: `Bearer ${key}` },
         });
         if (res.status === 401) {
@@ -464,7 +443,12 @@ export async function testAiProviderConnection(params: {
         if (!res.ok) {
           return { success: false, message: `OpenAI sunucusu hata verdi (${res.status}).` };
         }
-        return { success: true, message: 'OpenAI GPT bağlantısı başarıyla doğrulandı!' };
+        const data = await res.json();
+        const selected = model || 'gpt-4o-mini';
+        if (!Array.isArray(data.data) || !data.data.some((item: any) => item.id === selected)) {
+          return { success: false, message: `OpenAI model erişimi doğrulanamadı (${selected}).` };
+        }
+        return { success: true, message: `OpenAI bağlantısı ve model erişimi doğrulandı (${selected}).` };
       }
 
       case 'anthropic': {
@@ -472,7 +456,7 @@ export async function testAiProviderConnection(params: {
         if (!key) {
           return { success: false, message: 'Anthropic API anahtarı boş olamaz.' };
         }
-        const res = await fetch('https://api.anthropic.com/v1/messages', {
+        const res = await providerFetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -498,8 +482,8 @@ export async function testAiProviderConnection(params: {
       }
 
       case 'ollama': {
-        const cleanEp = (endpoint || 'http://localhost:11434').replace(/\/$/, '');
-        const res = await fetch(`${cleanEp}/api/tags`).catch(() => null);
+        const cleanEp = resolveOllamaEndpoint(endpoint);
+        const res = await providerFetch(`${cleanEp}/api/tags`).catch(() => null);
         if (!res) {
           return {
             success: false,
@@ -509,8 +493,13 @@ export async function testAiProviderConnection(params: {
         if (!res.ok) {
           return { success: false, message: `Ollama servisi yanıt vermedi (${res.status}).` };
         }
-        const data = await res.json().catch(() => ({ models: [] }));
-        const installedModels = (data.models || []).map((m: any) => m.name);
+        const data = await res.json();
+        const installedModels = Array.isArray(data.models) ? data.models.map((m: any) => m.name).filter((name: any) => typeof name === 'string') : [];
+        const selected = model || 'llama3';
+        const canonical = (name: string) => name.includes(':') ? name : `${name}:latest`;
+        if (!installedModels.some((name: string) => canonical(name) === canonical(selected))) {
+          return { success: false, message: `Ollama modeli yüklü değil (${selected}).`, details: { models: installedModels } };
+        }
         return {
           success: true,
           message: `Ollama bağlantısı başarılı! Yüklü modeller: ${installedModels.slice(0, 3).join(', ') || 'Yok'}`,
@@ -521,7 +510,7 @@ export async function testAiProviderConnection(params: {
   } catch (err: any) {
     return {
       success: false,
-      message: err.message || 'Sağlayıcıya bağlanırken beklenmeyen hata oluştu.',
+      message: 'Sağlayıcıya bağlanılamadı. Anahtarı, model adını ve bağlantıyı kontrol edin.',
     };
   }
 }
@@ -529,40 +518,19 @@ export async function testAiProviderConnection(params: {
 /**
  * Returns configuration status of all AI providers without leaking any secrets
  */
-export function getAiProvidersStatus(): Record<
-  string,
-  { configured: boolean; source: 'vault' | 'env' | 'none'; defaultModel: string }
-> {
-  const geminiVault = Boolean(getVaultSecret('gemini_custom_api_key'));
-  const geminiEnv = Boolean(process.env.GEMINI_API_KEY);
-
-  const openaiVault = Boolean(getVaultSecret('openai_api_key'));
-  const openaiEnv = Boolean(process.env.OPENAI_API_KEY);
-
-  const anthropicVault = Boolean(getVaultSecret('anthropic_api_key'));
-  const anthropicEnv = Boolean(process.env.ANTHROPIC_API_KEY);
-  const ollamaVault = Boolean(getVaultSecret('ollama_endpoint'));
-
-  return {
-    gemini: {
-      configured: geminiVault || geminiEnv,
-      source: geminiVault ? 'vault' : geminiEnv ? 'env' : 'none',
-      defaultModel: getVaultSecret('gemini_model') || 'gemini-3.8-flash',
-    },
-    openai: {
-      configured: openaiVault || openaiEnv,
-      source: openaiVault ? 'vault' : openaiEnv ? 'env' : 'none',
-      defaultModel: getVaultSecret('openai_model') || 'gpt-4o-mini',
-    },
-    anthropic: {
-      configured: anthropicVault || anthropicEnv,
-      source: anthropicVault ? 'vault' : anthropicEnv ? 'env' : 'none',
-      defaultModel: getVaultSecret('anthropic_model') || 'claude-3-5-haiku-20241022',
-    },
-    ollama: {
-      configured: ollamaVault,
-      source: ollamaVault ? 'vault' : 'none',
-      defaultModel: getVaultSecret('ollama_model') || 'llama3',
-    },
-  };
+type ProviderId = 'gemini' | 'openai' | 'anthropic' | 'ollama';
+export function getAiProviderStatus(id: ProviderId) {
+  const defaults = { gemini: 'gemini-3.8-flash', openai: 'gpt-4o-mini', anthropic: 'claude-3-5-haiku-20241022', ollama: 'llama3' };
+  const envKeys = { gemini: 'GEMINI_API_KEY', openai: 'OPENAI_API_KEY', anthropic: 'ANTHROPIC_API_KEY', ollama: '' };
+  const vault = Boolean(getVaultSecret(id === 'gemini' ? 'gemini_custom_api_key' : id === 'ollama' ? 'ollama_endpoint' : `${id}_api_key`));
+  const env = Boolean(envKeys[id] && process.env[envKeys[id]]);
+  const configured = vault || env;
+  const connected = configured && getVaultSecret(`plugin_${id}_tested`) === 'true';
+  const disabled = getVaultSecret(`plugin_${id}_enabled`) === 'false';
+  return { configured, source: vault ? 'vault' : env ? 'env' : 'none',
+    defaultModel: getVaultSecret(`${id}_model`) || defaults[id], connected,
+    enabled: connected && !disabled, disabled, failed: getVaultSecret(`plugin_${id}_test_failed`) === 'true' };
+}
+export function getAiProvidersStatus(): Record<string, ReturnType<typeof getAiProviderStatus>> {
+  return Object.fromEntries((['gemini', 'openai', 'anthropic', 'ollama'] as ProviderId[]).map(id => [id, getAiProviderStatus(id)]));
 }

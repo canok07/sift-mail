@@ -75,6 +75,7 @@ export function requireApiToken(req: Request, res: Response, next: NextFunction)
 
   return res.status(401).json({
     success: false,
+    code: 'SESSION_INVALID',
     error: 'Yetkisiz erişim: Geçerli bir Sift API anahtarı (x-sift-key) veya oturum doğrulaması gereklidir.',
   });
 }

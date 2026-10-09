@@ -1,44 +1,37 @@
 import { EmailAnalysis, EmailMessage, OrderShippingInfo, FinanceBillingInfo } from '../types';
-import { safeFetchJson } from './apiClient';
+import { useSettingsStore } from '../stores/useSettingsStore';
+import { safeUnsubscribeTarget } from './unsubscribeSafety';
 
 const OFFLINE_ANALYSIS_CACHE_KEY = 'smart_mail_analysis_cache_v2';
 
 // Helper to extract URL from List-Unsubscribe header (e.g. "<https://example.com/unsub>, <mailto:unsub@example.com>")
 export function parseListUnsubscribe(headerValue?: string): string {
-  if (!headerValue) return '';
-  const matchHttp = headerValue.match(/<(https?:\/\/[^>]+)>/i);
-  if (matchHttp && matchHttp[1]) {
-    return matchHttp[1];
-  }
-  const matchMailto = headerValue.match(/<(mailto:[^>]+)>/i);
-  if (matchMailto && matchMailto[1]) {
-    return matchMailto[1];
-  }
-  return '';
+  return safeUnsubscribeTarget(headerValue) || '';
 }
 
-// Get cached analyses for offline reading
-export function getOfflineAnalysis(emailId: string): EmailAnalysis | null {
+// Analysis is ephemeral. Never retain summaries or drafted replies in browser storage.
+const analysisCache = new Map<string, EmailAnalysis>();
+let cacheVersion = 0;
+export function getAnalysisCacheVersion(): number { return cacheVersion; }
+function purgeLegacyAnalysisCache(): void {
+  try { globalThis.localStorage?.removeItem(OFFLINE_ANALYSIS_CACHE_KEY); } catch { /* storage unavailable */ }
   try {
-    const raw = localStorage.getItem(OFFLINE_ANALYSIS_CACHE_KEY);
-    if (!raw) return null;
-    const cache = JSON.parse(raw);
-    return cache[emailId] || null;
-  } catch {
-    return null;
-  }
+    if (typeof caches !== 'undefined') void caches.delete('gemini-nlp-analysis-cache').catch(() => {});
+  } catch { /* browser cache unavailable */ }
 }
-
-// Save analysis to offline cache
-export function saveOfflineAnalysis(emailId: string, analysis: EmailAnalysis): void {
-  try {
-    const raw = localStorage.getItem(OFFLINE_ANALYSIS_CACHE_KEY) || '{}';
-    const cache = JSON.parse(raw);
-    cache[emailId] = analysis;
-    localStorage.setItem(OFFLINE_ANALYSIS_CACHE_KEY, JSON.stringify(cache));
-  } catch (err) {
-    console.warn('Çevrimdışı önbelleğe kaydedilemedi:', err);
-  }
+purgeLegacyAnalysisCache();
+export function clearOfflineAnalysis(): void {
+  cacheVersion += 1;
+  analysisCache.clear();
+  purgeLegacyAnalysisCache();
+}
+export function getOfflineAnalysis(key: string): EmailAnalysis | null {
+  return analysisCache.get(key) || null;
+}
+export function saveOfflineAnalysis(key: string, analysis: EmailAnalysis): void {
+  analysisCache.delete(key);
+  analysisCache.set(key, analysis);
+  while (analysisCache.size > 200) analysisCache.delete(analysisCache.keys().next().value!);
 }
 
 // Extract rich order & shipping metadata with heuristic fallback
@@ -100,132 +93,24 @@ export function extractFinanceBillingInfo(text: string): FinanceBillingInfo | un
   return undefined;
 }
 
-// Call backend Gemini NLP endpoint with offline fallback
+// Compatibility helpers delegate to the selected provider; there is no second AI pipeline.
 export async function analyzeEmailWithGemini(email: EmailMessage): Promise<EmailAnalysis> {
-  // Check offline cache first if navigator is offline
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    const cached = getOfflineAnalysis(email.id);
-    if (cached) return cached;
-  }
-
-  const headersCombined = [
-    email.listUnsubscribe ? `List-Unsubscribe: ${email.listUnsubscribe}` : '',
-    email.listUnsubscribePost ? `List-Unsubscribe-Post: ${email.listUnsubscribePost}` : '',
-  ].filter(Boolean).join('\n');
-
-  try {
-    const result = await safeFetchJson<EmailAnalysis>('/api/analyze-email', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: email.from,
-        subject: email.subject,
-        snippet: email.snippet,
-        bodyText: email.bodyText || email.snippet,
-        headers: headersCombined,
-      }),
-    });
-
-    // If header has direct unsubscribe URL and AI didn't catch it, supplement it
-    if (!result.unsubscribeUrl && email.listUnsubscribe) {
-      result.unsubscribeUrl = parseListUnsubscribe(email.listUnsubscribe);
-      if (result.unsubscribeUrl) {
-        result.isSubscription = true;
-      }
-    }
-
-    // Ensure safeCategory is defined
-    if (!result.safeCategory) {
-      result.safeCategory = result.isSafe ? 'other' : undefined;
-    }
-
-    // Complement rich metadata if missing
-    const combinedContent = `${email.subject} ${email.snippet} ${email.bodyText || ''}`;
-    if (result.safeCategory === 'shopping' && !result.orderShippingInfo) {
-      result.orderShippingInfo = extractOrderShippingInfo(combinedContent);
-    }
-    if (result.safeCategory === 'finance' && !result.financeBillingInfo) {
-      result.financeBillingInfo = extractFinanceBillingInfo(combinedContent);
-    }
-
-    result.analyzedAt = new Date().toISOString();
-
-    // Save to persistent offline cache
-    saveOfflineAnalysis(email.id, result);
-
-    return result;
-  } catch (err) {
-    // If network fails (e.g. offline mode), check cache or use intelligent local fallback
-    const cached = getOfflineAnalysis(email.id);
-    if (cached) return cached;
-
-    // Local heuristic fallback for offline / mock testing
-    const combined = `${email.subject} ${email.snippet} ${email.bodyText || ''}`.toLowerCase();
-    const isShopping = combined.includes('sipariş') || combined.includes('kargo') || combined.includes('teslimat') || combined.includes('order');
-    const isFinance = combined.includes('fatura') || combined.includes('ekstre') || combined.includes('ödeme') || combined.includes('tutar') || combined.includes('dekont');
-
-    const fallbackAnalysis: EmailAnalysis = {
-      classification: email.labels?.includes('SPAM') ? 'spam' : 'safe',
-      isSafe: !email.labels?.includes('SPAM'),
-      safetyScore: email.labels?.includes('SPAM') ? 15 : 94,
-      threatLevel: email.labels?.includes('SPAM') ? 'high' : 'none',
-      safeCategory: isShopping ? 'shopping' : isFinance ? 'finance' : 'work',
-      categoryConfidence: 90,
-      isSubscription: Boolean(email.listUnsubscribe),
-      unsubscribeUrl: parseListUnsubscribe(email.listUnsubscribe),
-      reasoning: 'Çevrimdışı / yerel akıllı motor tarafından ayrıştırıldı.',
-      keyFindings: ['İleti yapısı doğrulandı', 'Zararlı içerik bulunmadı'],
-      suggestedAction: 'keep_safe',
-      orderShippingInfo: isShopping ? extractOrderShippingInfo(`${email.subject} ${email.snippet}`) : undefined,
-      financeBillingInfo: isFinance ? extractFinanceBillingInfo(`${email.subject} ${email.snippet}`) : undefined,
-      analyzedAt: new Date().toISOString(),
-    };
-
-    saveOfflineAnalysis(email.id, fallbackAnalysis);
-    return fallbackAnalysis;
-  }
+  const { EmailAnalyzerFactory } = await import('./ai/aiFactory');
+  const settings = useSettingsStore.getState();
+  return EmailAnalyzerFactory.getAnalyzer(settings.aiProvider).analyze(email, {
+    provider: settings.aiProvider, ollamaEndpoint: settings.ollamaEndpoint,
+  });
 }
 
-// Batch analysis helper with offline caching
-export async function analyzeBatchEmails(
-  emails: EmailMessage[]
-): Promise<Record<string, EmailAnalysis>> {
-  try {
-    const data = await safeFetchJson<any>('/api/analyze-batch', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        emails: emails.map((e) => ({
-          id: e.id,
-          from: e.from,
-          subject: e.subject,
-          snippet: e.snippet,
-          headers: e.listUnsubscribe ? `List-Unsubscribe: ${e.listUnsubscribe}` : '',
-        })),
-      }),
-    });
-
-    const map: Record<string, EmailAnalysis> = {};
-    if (Array.isArray(data.results)) {
-      for (const item of data.results) {
-        const fullItem = {
-          ...item,
-          analyzedAt: new Date().toISOString(),
-        };
-        map[item.id] = fullItem;
-        saveOfflineAnalysis(item.id, fullItem);
-      }
-    }
-    return map;
-  } catch {
-    const map: Record<string, EmailAnalysis> = {};
-    for (const e of emails) {
-      map[e.id] = await analyzeEmailWithGemini(e);
-    }
-    return map;
-  }
+export async function analyzeBatchEmails(emails: EmailMessage[]): Promise<Record<string, EmailAnalysis>> {
+  const result: Record<string, EmailAnalysis> = {};
+  for (const email of emails) result[email.id] = await analyzeEmailWithGemini(email);
+  return result;
 }
+
+// Cache entries must not outlive an account, provider, endpoint or consent change.
+useSettingsStore.subscribe((current, previous) => {
+  if (current.aiProvider !== previous.aiProvider || current.aiEnabled !== previous.aiEnabled ||
+    current.ollamaEndpoint !== previous.ollamaEndpoint ||
+    current.allowCloudEmailBody !== previous.allowCloudEmailBody) clearOfflineAnalysis();
+});

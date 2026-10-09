@@ -16,6 +16,25 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
 }
 
+// Creation modes do not repair permissions on files copied from another machine.
+// Never follow a link while restricting the local credential store.
+if (process.platform !== 'win32') {
+  const directory = fs.lstatSync(DATA_DIR);
+  if (!directory.isDirectory() || directory.isSymbolicLink()) {
+    throw new Error('Vault data directory must be a real directory.');
+  }
+  fs.chmodSync(DATA_DIR, 0o700);
+  for (const file of [KEY_FILE, SALT_FILE, WINDOWS_KEY_FILE, VAULT_FILE, path.join(DATA_DIR, 'mail-cache.enc')]) {
+    let entry: fs.Stats;
+    try { entry = fs.lstatSync(file); }
+    catch (error: any) { if (error.code === 'ENOENT') continue; throw error; }
+    if (!entry.isFile() || entry.isSymbolicLink()) {
+      throw new Error('Vault storage must contain regular files, not links.');
+    }
+    fs.chmodSync(file, 0o600);
+  }
+}
+
 // Generate or read persistent salt
 function getOrCreateSalt(): Buffer {
   if (fs.existsSync(SALT_FILE)) {

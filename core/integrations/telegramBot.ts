@@ -1,6 +1,6 @@
 import { Telegraf } from 'telegraf';
 import { getVaultSecret, saveVaultSecret } from '../security/vault';
-import { GoogleGenAI } from '@google/genai';
+import { generateAssistantText } from '../ai/multiModelService';
 
 let botInstance: Telegraf | null = null;
 let currentBotToken: string = '';
@@ -55,11 +55,10 @@ export async function setupTelegramBot(token: string, ownerChatId: string): Prom
     bot.command('start', async (ctx) => {
       await ctx.reply(
         `👋 Merhaba! Sift AI-Powered Inbox Telegram Asistanınız devrede.\n\n` +
-        `Buradan e-posta kutunuzu yönetebilir, yapay zeka ile özet çıkartabilir ve spam iletileri temizleyebilirsiniz.\n\n` +
+        `Buradan Sift Mail kullanım yardımı alabilirsiniz. Posta işlemleri uygulamada onayınızla yapılır.\n\n` +
         `Örnek Komutlar:\n` +
-        `• "Son 3 saatteki spam mailleri temizle"\n` +
-        `• "Bugünkü önemli mailleri özetle"\n` +
-        `• "Kutuda kaç okunmamış mail var?"\n` +
+        `• "Sift Mail'de bir hesap nasıl eklenir?"\n` +
+        `• "Uygulamada mail nasıl oluşturulur?"\n` +
         `• /status - Sistem durumu`
       );
     });
@@ -71,7 +70,7 @@ export async function setupTelegramBot(token: string, ownerChatId: string): Prom
         `• Bot Durumu: Aktif & Çevrimiçi 🟢\n` +
         `• Güvenlik: Whitelist Korumalı\n` +
         `• Yetkili ID: \`${currentOwnerId}\`\n` +
-        `• AI Motoru: Gemini NLP Entegre`,
+        `• Posta erişimi: Bağlı değil; işlemleri Sift Mail içinde yapın`,
         { parse_mode: 'Markdown' }
       );
     });
@@ -109,59 +108,18 @@ export async function setupTelegramBot(token: string, ownerChatId: string): Prom
   }
 }
 
-// Process NLP commands using Gemini to extract intent & reply intelligently
+// Telegram has no connected mailbox action context. Never invent messages or completed actions.
 export async function processTelegramNaturalLanguageCommand(query: string): Promise<string> {
-  const apiKey = getVaultSecret('gemini_custom_api_key') || process.env.GEMINI_API_KEY;
-  let ai: GoogleGenAI | null = null;
-  if (apiKey) {
-    ai = new GoogleGenAI({ apiKey });
+  if (!query.trim() || query.length > 2000) return 'Geçerli ve kısa bir komut yazın.';
+  if (/spam|temizle|sil|çöpe|özet|önemli|rapor|okunmamış/i.test(query)) {
+    return 'Telegram üzerinden posta okuma ve değiştirme henüz bağlı değil. Hiçbir ileti okunmadı, gönderilmedi veya silinmedi. Bu işlemi Sift Mail içinde yapın.';
   }
-
-  const queryLower = query.toLowerCase();
-
-  // Pattern 1: Spam cleanup request (e.g. "Son 3 saatteki spam mailleri temizle")
-  if (queryLower.includes('spam') && (queryLower.includes('temizle') || queryLower.includes('sil') || queryLower.includes('çöpe'))) {
-    return (
-      `🧹 *Spam Temizleme Görevi Tamamlandı*\n\n` +
-      `• Hedef: Son iletiler içerisindeki şüpheli ve spam içerikler\n` +
-      `• Tespit Edilen Spam: 4 adet tanıtım ve kimlik avı şüphesi\n` +
-      `• Yapılan İşlem: İletiler çöp kutusuna taşındı ve gönderici alan adları engellendi.\n` +
-      `• Güvenlik Skoru: Gelen kutusu %100 koruma altında.`
-    );
-  }
-
-  // Pattern 2: Summarize important emails (e.g. "Bugünkü önemli mailleri özetle")
-  if (queryLower.includes('özet') || queryLower.includes('önemli') || queryLower.includes('rapor')) {
-    return (
-      `📑 *Bugünkü Önemli E-postalarınızın Özeti*\n\n` +
-      `1️⃣ *Trendyol Siparişiniz Kargoya Verildi* (Alışveriş)\n` +
-      `   └ Yurtiçi Kargo Takip: #9832104812 — Tahmini teslimat: Yarın.\n\n` +
-      `2️⃣ *Turkcell Mart 2026 Faturası* (Finans)\n` +
-      `   └ Ödenecek Tutar: ₺489,50 — Son Ödeme Tarihi: 24 Mart.\n\n` +
-      `3️⃣ *Q1 Bütçe Değerlendirme Toplantısı* (İş)\n` +
-      `   └ Ayşe Demir: "Yarın saat 14:00 için toplantı daveti gönderildi."\n\n` +
-      `✨ _Tüm diğer 12 adet bülten ve reklam iletisi güvenli şekilde filtrelendi._`
-    );
-  }
-
-  // If Gemini AI is available, use it to generate conversational response for arbitrary queries
-  if (ai) {
-    try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: `Kullanıcı Sift E-posta botuna şu mesajı yazdı: "${query}".
-Sen Sift e-posta yöneticisinin Telegram asistanısın. Kullanıcıya nazik, profesyonel, e-posta yönetimi odaklı Türkçe ve Markdown formatında kısa bir yanıt ver. Eğer bir e-posta görevi rica ediyorsa yapılmış gibi detay ver.`,
-      });
-      return response.text || 'Talebiniz Sift e-posta motoru tarafından işlendi.';
-    } catch {
-      // Fallback
-    }
-  }
-
-  return (
-    `📩 *Sift E-posta Asistanı*: "${query}" komutunuz algılandı.\n` +
-    `Gelen kutunuz taranıyor. İşlemlerinizin detaylarını web panelinden de anlık olarak takip edebilirsiniz.`
-  );
+  try {
+    return await generateAssistantText({
+      provider: 'gemini', prompt: query,
+      systemInstruction: 'Sift Mail için kısa kullanım yardımı ver. Posta kutusuna erişimin yok. Mail okunduğunu, özetlendiğini, gönderildiğini, silindiğini veya ayar değiştirildiğini asla iddia etme.',
+    }) || 'AI yardımcısı şu anda kullanılamıyor. Sift Mail Yardım bölümünü kullanın.';
+  } catch { return 'AI yardımcısı şu anda kullanılamıyor. Sift Mail Yardım bölümünü kullanın.'; }
 }
 
 // Get current Telegram bot status

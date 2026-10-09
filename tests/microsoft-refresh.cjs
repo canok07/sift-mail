@@ -13,10 +13,12 @@ test('expired Microsoft token refreshes once for concurrent actions', async () =
   const previousFetch = global.fetch;
   let refreshCount = 0;
   global.fetch = async (url, options) => {
-    if (String(url) === '/api/auth/session') return new Response(JSON.stringify({ token: 'local-test-token' }), { status: 200 });
-    if (String(url) === '/api/oauth/microsoft/refresh') {
+    const pathname = new URL(url instanceof Request ? url.url : String(url), 'http://localhost').pathname;
+    if (pathname === '/api/auth/session') return new Response(JSON.stringify({ token: 'local-test-token' }), { status: 200 });
+    if (pathname === '/api/oauth/microsoft/refresh') {
       refreshCount++;
-      assert.equal(JSON.parse(options.body).email, 'fixture@outlook.com');
+      const body = url instanceof Request ? await url.clone().json() : JSON.parse(options.body);
+      assert.equal(body.email, 'fixture@outlook.com');
       return new Response(JSON.stringify({ success: true, accessToken: 'fresh-token', expiresIn: 3600 }), { status: 200 });
     }
     throw new Error(`unexpected request: ${url}`);

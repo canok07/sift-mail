@@ -1,4 +1,30 @@
 {
+  "ui": {
+    "settings": {
+      "searchPlaceholder": "Einstellungen durchsuchen",
+      "activeProvider": "Aktiver KI-Anbieter",
+      "testHint": "Der Test speichert den Schlüssel nicht. Wählen Sie nach einem erfolgreichen Test zusätzlich ‘Verbinden und sicher speichern’.",
+      "connect": "Verbinden und sicher speichern",
+      "connected": "Verbindung sicher gespeichert. Sift-Assistent ist jetzt aktiviert."
+    },
+    "compose": {
+      "restore": "Nachrichtenfenster wiederherstellen",
+      "forwardedMessage": "Weitergeleitete Nachricht",
+      "date": "Datum",
+      "fileTooLarge": "{{filename}}: überschreitet das Limit von {{max}} MB.",
+      "attachmentsTooLarge": "Die gesamte Anhanggröße überschreitet das Limit von {{max}} MB.",
+      "sent": "E-Mail gesendet.",
+      "tooManyAttachments": "Sie können bis zu 20 Dateien anhängen.",
+      "originalUnavailable": "Die Originalnachricht konnte nicht geladen werden. Synchronisieren Sie das Quellkonto und den Ordner erneut.",
+      "linkUrl": "Link-Adresse",
+      "insertLink": "Link einfügen",
+      "invalidLink": "Geben Sie einen gültigen http-, https- oder mailto-Link ein."
+    },
+    "assistant": {
+      "connectFirst": "Verbinden Sie zuerst ein funktionierendes Modell unter Einstellungen → Künstliche Intelligenz.",
+      "open": "Sift-KI-Assistenten öffnen"
+    }
+  },
   "app": {
     "title": "Sift Mail",
     "tagline": "AI-Powered Inbox",
@@ -120,6 +146,18 @@
   "ai": {"assistant":"KI-Assistent"},
   "settings": {"title":"Einstellungen","tabs":{"general":"Allgemein","interface":"Oberfläche","ai":"Künstliche Intelligenz","help":"Hilfe","about":"Info"},"general":{"language":"Sprache","security":"Datenschutz und Sicherheit","trackers":"Tracking-Pixel blockieren","vault":"Verschlüsselter Tresor","desktop":"Desktop-Setup"},"interface":{"theme":"Design","customize":"Darstellung anpassen","themes":{"light":"Sanft hell","dark":"Dunkel","oled":"OLED","ocean":"Ozean","forest":"Wald"},"accent":"Akzentfarbe","font":"Schriftart","fontSize":"Schriftgröße","pageSize":"Angezeigte E-Mails","background":"Hintergrundbild"},"ai":{"title":"KI-Anbieter","description":"Gemini, GPT, Claude oder lokales Ollama verbinden. Schlüssel liegen im verschlüsselten Server-Tresor.","local":"Lokal","apiKey":"API-Schlüssel","model":"Modellname (optional)","test":"Verbindung testen","save":"Speichern","saving":"Wird verarbeitet…","success":"Verbindung erfolgreich.","error":"Verbindung fehlgeschlagen.","allowCloudBody":"E-Mail-Inhalte an Cloud-KI senden erlauben","privacyHint":"Wenn deaktiviert, erhalten Cloud-Anbieter nur Absender, Betreff und Kurzvorschau. Anhänge werden nie automatisch hochgeladen."},"help":{"title":"Hilfezentrum","askAI":"KI-Assistenten fragen","accounts":{"q":"Wie füge ich ein Konto hinzu?","a":"Unter Konto hinzufügen einen Anbieter wählen; wenn OAuth verfügbar ist dessen Seite verwenden, sonst IMAP mit App-Passwort."},"sync":{"q":"Wie funktioniert die Synchronisierung?","a":"Die App öffnet sofort; aktuelle Nachrichten werden danach ordnerweise im Hintergrund geladen."},"password":{"q":"Wird mein Passwort gespeichert?","a":"Sitzungsdaten bleiben standardmäßig nur im Speicher; der verschlüsselte Tresor ist optional."},"ai":{"q":"Kann die KI E-Mails senden?","a":"Die KI erstellt Vorschläge; Senden und Löschen benötigen weiterhin Ihre Bestätigung."}},"about":{"title":"Über Sift Mail","description":"Anpassbarer Desktop-Client für Gmail, Outlook, Apple, Yandex und Standard-IMAP/SMTP-Konten.","version":"Version","engine":"System","developer":"Inhaber / Entwickler","hidden":"Derzeit verborgen"}},
   "integrations": {"title":"Integrationen","description":"Optionale KI- und Entscheidungsanbieter verwalten.","refresh":"Aktualisieren","configure":"Konfigurieren","test":"Testen","enable":"Aktivieren","disable":"Deaktivieren","save":"Sicher speichern","apiKey":"API-Schlüssel","endpoint":"Endpunkt (Anbieterdokumentation)","model":"Modell","done":"Vorgang abgeschlossen.","failed":"Vorgang fehlgeschlagen.","localFallback":"Wenn Jev nicht verfügbar ist, übernimmt Sift Local sicher. Plugins können keine E-Mails senden oder löschen.","kinds":{"ai-provider":"KI-Anbieter","decision-provider":"Entscheidungsanbieter"},"capabilities":{"generate":"Erstellen","summarize":"Zusammenfassen","classify":"Klassifizieren","draft-reply":"Antwortentwurf","constrained-decision":"Begrenzte Entscheidung"},"status":{"NOT_CONFIGURED":"NICHT KONFIGURIERT","CONFIGURED":"KONFIGURIERT","CONNECTED":"VERBUNDEN","DISABLED":"DEAKTIVIERT","ERROR":"FEHLER"}},
+  "mailActions": {
+    "missingIdentity": "Die Serverkennung der Nachricht fehlt. Konto synchronisieren und erneut versuchen; die Nachricht wurde nicht geändert.",
+    "invalidUnsubscribe": "Kein gültiger Abmeldelink gefunden. Keine Nachrichten wurden geändert.",
+    "unsubscribeOpened": "Das Öffnen der Abmeldeseite wurde angefordert. Schließen Sie den Vorgang auf der Anbieterseite ab.",
+    "unsubscribeDraft": "Das Öffnen eines Abmeldeentwurfs wurde angefordert. Er wurde noch nicht gesendet.",
+    "unsubscribeBatch": "Das Öffnen von {{count}} Abmeldelinks wurde angefordert. Abmeldungen wurden noch nicht bestätigt.",
+    "completed": "{{completed}} Nachrichten wurden in den Papierkorb verschoben.",
+    "partial": "{{completed}} Nachrichten verschoben; {{remaining}} verbleiben. Der Vorgang wurde gestoppt.",
+    "failed": "Der Vorgang konnte nicht abgeschlossen werden. Verbindung prüfen und erneut versuchen.",
+    "noSenderHistory": "In diesem Konto wurde kein passender Absenderverlauf gefunden.",
+    "senderPreview": "{{count}} geladene Nachrichten von {{sender}} im Konto {{account}} in den Papierkorb verschieben. Andere Konten, Absender und gesendete Nachrichten bleiben unverändert. Die Abmeldeseite wird ebenfalls geöffnet."
+  },
   "toast": {
     "markedSafe": "E-Mail als sicher bestätigt und archiviert.",
     "unsubStarted": "Abmeldevorgang gestartet.",

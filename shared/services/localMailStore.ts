@@ -8,6 +8,7 @@ export interface ComposeDraft {
   bcc: string;
   subject: string;
   body: string;
+  bodyHtml?: string;
   attachments: Array<{ filename: string; content: string; encoding: 'base64'; contentType?: string; size: number; source: 'file' | 'email' }>;
 }
 

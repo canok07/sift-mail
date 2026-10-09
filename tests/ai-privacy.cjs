@@ -11,3 +11,8 @@ test('cloud AI body is opt-in while local Ollama remains local',()=>{
  assert.equal(emailBodyForAI('secret body','openai',true),'secret body');
  assert.equal(emailBodyForAI('secret body','ollama',false),'secret body');
 });
+test('remote Ollama needs cloud consent just like other providers',()=>{
+ assert.equal(emailBodyForAI('secret body','ollama',false,'https://remote.example.test'),undefined);
+ assert.equal(emailBodyForAI('secret body','ollama',true,'https://remote.example.test'),'secret body');
+ assert.equal(emailBodyForAI('secret body','ollama',false,'http://localhost.evil.test'),undefined);
+});

@@ -8,6 +8,7 @@ import {
   extractFinanceBillingInfo,
   getOfflineAnalysis,
   saveOfflineAnalysis,
+  getAnalysisCacheVersion,
 } from '../emailAnalyzer';
 
 export interface IEmailAnalyzer {
@@ -23,9 +24,14 @@ class UnifiedMultiModelAnalyzer implements IEmailAnalyzer {
     email: EmailMessage,
     config: { provider: AIProvider; ollamaEndpoint?: string }
   ): Promise<EmailAnalysis> {
+    const settings = useSettingsStore.getState();
+    if (!settings.aiEnabled) throw new Error('AI_UNAVAILABLE');
+    const cacheVersion = getAnalysisCacheVersion();
+    const endpoint = config.ollamaEndpoint || settings.ollamaEndpoint;
+    const cacheKey = JSON.stringify([email.accountId, email.id, config.provider, endpoint, settings.allowCloudEmailBody]);
     // If offline, attempt cache return
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      const cached = getOfflineAnalysis(email.id);
+      const cached = getOfflineAnalysis(cacheKey);
       if (cached) return cached;
     }
 
@@ -37,7 +43,6 @@ class UnifiedMultiModelAnalyzer implements IEmailAnalyzer {
       .join('\n');
 
     try {
-      const settings = useSettingsStore.getState();
       const result = await safeFetchJson<EmailAnalysis>('/api/ai/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -45,12 +50,16 @@ class UnifiedMultiModelAnalyzer implements IEmailAnalyzer {
           from: email.from,
           subject: email.subject,
           snippet: email.snippet,
-          bodyText: emailBodyForAI(email.bodyText || email.snippet, config.provider, settings.allowCloudEmailBody),
+          bodyText: emailBodyForAI(email.bodyText || email.snippet, config.provider, settings.allowCloudEmailBody, endpoint),
+          allowCloudEmailBody: settings.allowCloudEmailBody,
           headers: headersCombined,
           provider: config.provider,
-          ollamaEndpoint: config.ollamaEndpoint || 'http://localhost:11434',
+          ollamaEndpoint: endpoint,
         }),
       });
+
+      // A request started before consent/account/provider changed cannot repopulate memory.
+      if (getAnalysisCacheVersion() !== cacheVersion) throw new Error('AI_REQUEST_SUPERSEDED');
 
       // Post-process metadata
       if (!result.unsubscribeUrl && email.listUnsubscribe) {
@@ -73,20 +82,15 @@ class UnifiedMultiModelAnalyzer implements IEmailAnalyzer {
       }
 
       result.analyzedAt = new Date().toISOString();
-      saveOfflineAnalysis(email.id, result);
+      saveOfflineAnalysis(cacheKey, result);
       return result;
     } catch (err: any) {
       // Offline / fallback handling
-      const cached = getOfflineAnalysis(email.id);
-      if (cached) return cached;
-
-      console.warn(`[AIFactory] ${config.provider} isteği yerel motora aktarıldı:`, err.message);
-
-      const combined = `${email.subject} ${email.snippet} ${email.bodyText || ''}`.toLowerCase();
-      const isShopping =
-        combined.includes('sipariş') || combined.includes('kargo') || combined.includes('order');
-      const isFinance =
-        combined.includes('fatura') || combined.includes('ekstre') || combined.includes('ödeme');
+      if (getAnalysisCacheVersion() !== cacheVersion) throw new Error('AI_REQUEST_SUPERSEDED');
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        const cached = getOfflineAnalysis(cacheKey);
+        if (cached) return cached;
+      }
 
       throw new Error('AI analizi tamamlanamadı. Sağlayıcı bağlantısını ve API anahtarını kontrol edin.');
     }

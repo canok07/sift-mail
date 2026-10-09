@@ -13,6 +13,8 @@
  * helpful and user-friendly error messages are provided.
  */
 
+import { getApiBaseUrl, getApiUrl } from './apiConfig';
+
 export class ApiError extends Error {
   status: number;
   data: any;
@@ -109,12 +111,14 @@ export async function getClientApiToken(): Promise<string | null> {
   if (!sessionTokenPromise) {
     sessionTokenPromise = (async () => {
       try {
-        const res = await fetch('/api/auth/session', {
+        const res = await fetch(getApiUrl('/api/auth/session'), {
           headers: { Accept: 'application/json' },
+          redirect: 'error',
+          signal: AbortSignal.timeout(8000),
         });
         if (res.ok) {
           const data = await res.json();
-          if (data?.token) {
+          if (typeof data?.token === 'string' && data.token.trim()) {
             cachedSessionToken = data.token;
             return data.token;
           }
@@ -123,7 +127,7 @@ export async function getClientApiToken(): Promise<string | null> {
         // Fallback gracefully in case backend is offline or static preview
       }
       return null;
-    })();
+    })().finally(() => { sessionTokenPromise = null; });
   }
 
   return sessionTokenPromise;
@@ -137,30 +141,38 @@ export async function safeFetchJson<T = any>(
   input: RequestInfo | URL,
   init?: RequestInit
 ): Promise<T> {
-  const mergedHeaders: Record<string, string> = {
-    Accept: 'application/json',
-    ...(init?.headers as Record<string, string> || {}),
+  const origin = typeof location !== 'undefined' ? location.origin : 'http://localhost';
+  const inputUrl = input instanceof Request ? input.url : String(input);
+  const url = new URL(inputUrl.startsWith('/api/') ? getApiUrl(inputUrl) : inputUrl, origin);
+  const apiOrigin = new URL(getApiBaseUrl() || origin, origin).origin;
+  const trustedApi = url.origin === apiOrigin && url.pathname.startsWith('/api/');
+  const request = new Request(input instanceof Request ? input : url, init);
+  const headers = new Headers(request.headers);
+  if (!headers.has('Accept')) headers.set('Accept', 'application/json');
+  const automaticAuth = trustedApi && url.pathname !== '/api/auth/session'
+    && !headers.has('Authorization') && !headers.has('x-sift-key');
+  let token = automaticAuth ? await getClientApiToken() : null;
+  const send = async () => {
+    const nextHeaders = new Headers(headers);
+    if (token) { nextHeaders.set('x-sift-key', token); nextHeaders.set('Authorization', `Bearer ${token}`); }
+    // Clone before sending: an authentication rejection may safely replay the body once.
+    return fetch(request.clone(), { headers: nextHeaders, redirect: trustedApi ? 'error' : request.redirect });
   };
-
-  // Automatically attach session/API key to local API routes
-  const inputUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url;
-  if (inputUrl && (inputUrl.startsWith('/api/') || inputUrl.includes('/api/')) && !inputUrl.includes('/api/auth/session')) {
-    if (!mergedHeaders['Authorization'] && !mergedHeaders['x-sift-key']) {
-      const token = await getClientApiToken();
-      if (token) {
-        mergedHeaders['x-sift-key'] = token;
-        mergedHeaders['Authorization'] = `Bearer ${token}`;
+  try {
+    let response = await send();
+    if (automaticAuth && response.status === 401) {
+      const rejected = await response.clone().json().catch(() => null);
+      // Only the pre-action auth middleware can authorize a replay. Never retry
+      // mail sends on timeouts, network failures or provider-authentication errors.
+      if (rejected?.code === 'SESSION_INVALID') {
+        if (cachedSessionToken === token) cachedSessionToken = null;
+        token = await getClientApiToken();
+        if (token) response = await send();
       }
     }
-  }
-
-  let response: Response;
-  try {
-    response = await fetch(input, {
-      ...init,
-      headers: mergedHeaders,
-    });
+    return await parseResponseSafe<T>(response);
   } catch (networkErr: any) {
+    if (networkErr instanceof ApiError || networkErr?.name === 'AbortError') throw networkErr;
     throw new ApiError(
       networkErr?.message
         ? `Ağ bağlantı hatası: ${networkErr.message}`
@@ -169,7 +181,6 @@ export async function safeFetchJson<T = any>(
     );
   }
 
-  return parseResponseSafe<T>(response);
 }
 
 /**

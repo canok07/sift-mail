@@ -1,6 +1,7 @@
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { EmailMessage } from '../../types';
+import { askAIAssistant } from '../aiAssistantService';
 
 export interface ProposedAIAction {
   id: string;
@@ -118,15 +119,14 @@ export async function generateSmartAIAction(
   const senderDisplayName = email.fromName || email.fromEmail || email.from;
 
   if (actionHint === 'reply') {
-    // Generate an intelligent draft reply proposal
-    let suggestedBody = '';
-    if (email.analysis?.safeCategory === 'work') {
-      suggestedBody = `Merhaba,\n\n"${email.subject}" konulu iletinizi aldım ve inceledim. Konuyla ilgili detayları hazırlayıp gün içerisinde size dönüş yapacağım.\n\nİyi çalışmalar dilerim,\nSaygılarımla.`;
-    } else if (email.analysis?.safeCategory === 'finance') {
-      suggestedBody = `Merhaba,\n\nİletmiş olduğunuz fatura ve ödeme bilgilerini teslim aldım. Muhasebe ve ödeme kayıtlarımız kontrol edilerek onaylanacaktır.\n\nTeşekkürler.`;
-    } else {
-      suggestedBody = `Merhaba ${senderDisplayName},\n\nE-postanız tarafıma ulaştı. En kısa sürede inceleyip sizinle iletişime geçeceğim.\n\nİyi günler.`;
-    }
+    const generated = await askAIAssistant({
+      task: 'smart_reply', messages: [], emailContext: {
+        id: email.id, from: email.from, fromEmail: email.fromEmail, subject: email.subject,
+        date: email.date, snippet: email.snippet, bodyText: email.bodyText,
+      },
+    });
+    const suggestedBody = generated.draftReply || generated.reply;
+    if (!suggestedBody.trim()) throw new Error('AI_EMPTY_RESPONSE');
 
     return {
       id: `act-${Date.now()}`,

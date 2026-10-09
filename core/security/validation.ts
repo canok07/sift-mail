@@ -69,6 +69,11 @@ export const ImapAttachmentSchema = ImapConnectSchema.omit({ folders: true, offs
   index: z.coerce.number().int().min(0).max(100),
 });
 
+export const ImapRawMessageSchema = ImapAttachmentSchema.omit({ index: true }).extend({
+  messageId: z.string().trim().min(1).max(500).optional(),
+  maxBytes: z.coerce.number().int().min(1).max(25 * 1024 * 1024).optional(),
+});
+
 export const EmailSyncSchema = z.object({
   offset: z.coerce.number().int().min(0).optional(),
   sinceUid: z.coerce.number().int().positive().optional(),
@@ -213,7 +218,8 @@ export const AiAnalyzeSchema = z.object({
   bodyText: z.string().max(300000).optional().default(''),
   body: z.string().max(300000).optional().default(''),
   headers: z.string().max(20000).optional().default(''),
-  provider: z.string().max(100).optional(),
+  provider: z.enum(['gemini', 'openai', 'anthropic', 'ollama']).optional(),
+  allowCloudEmailBody: z.boolean().default(false),
   ollamaEndpoint: z.string().max(500).optional(),
   modelName: z.string().max(100).optional(),
   model: z.string().max(100).optional(),
@@ -221,46 +227,51 @@ export const AiAnalyzeSchema = z.object({
 
 // Common AI Output Validation Schema (Satisfies Requirement 4 & 5)
 export const AiAnalysisResultSchema = z.object({
-  summary: z.string().default(''),
-  category: z.string().default('other'),
-  priority: z.enum(['low', 'medium', 'high', 'urgent']).default('medium'),
-  phishingRisk: z.enum(['safe', 'suspicious', 'dangerous']).default('safe'),
-  classification: z.enum(['safe', 'newsletter', 'spam', 'phishing']).default('safe'),
-  isSafe: z.boolean().default(true),
-  safetyScore: z.number().min(0).max(100).default(80),
-  threatLevel: z.enum(['none', 'low', 'medium', 'high', 'critical']).default('none'),
-  safeCategory: z
-    .enum(['work', 'finance', 'shopping', 'official', 'personal', 'travel', 'other'])
-    .default('other'),
-  categoryConfidence: z.number().min(0).max(100).optional().default(85),
-  isSubscription: z.boolean().default(false),
-  unsubscribeUrl: z.string().default(''),
-  reasoning: z.string().default(''),
-  keyFindings: z.array(z.string()).default([]),
-  suggestedAction: z
-    .enum(['keep_safe', 'reply', 'unsubscribe', 'trash', 'block_spam'])
-    .default('keep_safe'),
-  draftReply: z.string().default(''),
-  suggestedFilterRule: z
-    .object({
-      patternType: z.enum(['from', 'subject', 'domain']),
-      patternValue: z.string(),
-      description: z.string(),
-    })
-    .optional(),
-});
+  summary: z.string().max(3000),
+  category: z.enum(['work', 'finance', 'shopping', 'official', 'personal', 'travel', 'other']),
+  priority: z.enum(['low', 'medium', 'high', 'urgent']),
+  phishingRisk: z.enum(['safe', 'suspicious', 'dangerous']),
+  classification: z.enum(['safe', 'newsletter', 'spam', 'phishing']),
+  isSafe: z.boolean(),
+  safetyScore: z.number().finite().min(0).max(100),
+  threatLevel: z.enum(['none', 'low', 'medium', 'high', 'critical']).optional().default('medium'),
+  safeCategory: z.enum(['work', 'finance', 'shopping', 'official', 'personal', 'travel', 'other']),
+  categoryConfidence: z.number().finite().min(0).max(100).optional().default(0),
+  isSubscription: z.boolean().optional().default(false),
+  unsubscribeUrl: z.string().max(2000).optional().default(''),
+  reasoning: z.string().max(5000),
+  keyFindings: z.array(z.string().max(1000)).max(20).optional().default([]),
+  suggestedAction: z.enum(['keep_safe', 'reply', 'unsubscribe', 'trash', 'block_spam']),
+  draftReply: z.string().max(12000).optional().default(''),
+  suggestedFilterRule: z.object({
+    patternType: z.enum(['from', 'subject', 'domain']),
+    patternValue: z.string().min(1).max(500),
+    description: z.string().max(1000),
+  }).optional(),
+}).refine(result => !result.isSafe ||
+  (['safe', 'newsletter'].includes(result.classification) && result.phishingRisk === 'safe' &&
+    !['high', 'critical'].includes(result.threatLevel)),
+  'Conflicting safety assessment');
 
+const AssistantMessageSchema = z.object({
+  role: z.enum(['user', 'model']), content: z.string().min(1).max(12000),
+});
+const AssistantEmailSchema = z.object({
+  id: z.string().max(500).optional(), from: z.string().max(500).optional(),
+  fromEmail: z.string().max(500).optional(), subject: z.string().max(1000).optional(),
+  date: z.string().max(100).optional(), snippet: z.string().max(10000).optional(),
+  bodyText: z.string().max(300000).optional(), classification: z.string().max(50).optional(),
+  safetyScore: z.number().min(0).max(100).optional(), category: z.string().max(100).optional(),
+});
 export const AssistantChatSchema = z.object({
-  messages: z.array(z.record(z.string(), z.any())).optional(),
-  emailContext: z.record(z.string(), z.any()).optional(),
-  task: z.string().optional(),
-  replyIntent: z.string().optional(),
-  revisionType: z.string().optional(),
-  draftText: z.string().optional(),
-  message: z.string().optional(),
-  context: z.record(z.string(), z.any()).optional(),
-  history: z.array(z.record(z.string(), z.any())).optional(),
+  messages: z.array(AssistantMessageSchema).max(20).optional().default([]),
+  emailContext: AssistantEmailSchema.optional(),
+  task: z.enum(['general_chat', 'summarize', 'extract_tasks', 'analyze_tone', 'smart_reply', 'revise']).optional().default('general_chat'),
+  replyIntent: z.enum(['positive', 'decline', 'meeting', 'more_info']).optional(),
+  revisionType: z.enum(['formal', 'friendly', 'shorter', 'longer', 'translate_en', 'translate_de', 'translate_tr']).optional(),
+  draftText: z.string().max(12000).optional(),
   provider: z.enum(['gemini', 'openai', 'anthropic', 'ollama']).optional(),
+  allowCloudEmailBody: z.boolean().default(false),
   ollamaEndpoint: z.string().trim().max(500).optional(),
   model: z.string().trim().max(100).optional(),
 });

@@ -5,7 +5,8 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { ensureFreshMicrosoftCredentials, syncEmailsFromBackend } from './services/mailSyncService';
-import { analyzeEmailWithGemini } from './services/emailAnalyzer';
+import { clearOfflineAnalysis } from './services/emailAnalyzer';
+import { safeUnsubscribeTarget } from './services/unsubscribeSafety';
 import {
   CATEGORIES_META,
   DEFAULT_AUTO_RULES,
@@ -48,8 +49,10 @@ import { AIActionModal } from './components/AIActionModal';
 import { AIAssistantDrawer } from './components/AIAssistantDrawer';
 import { EmailReplyModal } from './components/EmailReplyModal';
 import { ComposeModal } from './components/ComposeModal';
+import { AI_CONNECTION_CHANGED, refreshAIConnections } from './services/aiConnections';
 import { safeFetchJson } from './services/apiClient';
 import { MailViewRequestGuard } from './services/mailViewGuard';
+import { executeConfirmedMailBatch, selectSenderHistory } from './services/mailActionSafety';
 import { mergeMailRefresh } from './services/mailMerge';
 import { ComposeDraft, ReplyDraft, loadLocalMailSnapshot, saveLocalMailSnapshot } from './services/localMailStore';
 import { motion, AnimatePresence } from 'motion/react';
@@ -194,9 +197,10 @@ export default function App() {
   useEffect(() => { setCurrentPage(1); setSelectedEmailIds(new Set()); setDetailEmail(null); }, [pageSize, activeTab, activeAccountId, searchQuery, activeLabel]);
   useEffect(() => {
     let active=true;
-    safeFetchJson<any>('/api/ai/providers-status').then(data=>{if(active)setAIEnabled(Boolean(aiEnabled&&data.providers?.[aiProvider]?.configured))}).catch(()=>{if(active)setAIEnabled(false)});
-    return()=>{active=false};
-  },[aiProvider,aiEnabled,setAIEnabled]);
+    const refresh=()=>{if(active)void refreshAIConnections().catch(()=>{if(active)setAIEnabled(false)})};
+    refresh(); window.addEventListener(AI_CONNECTION_CHANGED,refresh);
+    return()=>{active=false;window.removeEventListener(AI_CONNECTION_CHANGED,refresh)};
+  },[aiProvider,setAIEnabled]);
   useEffect(() => { localStorage.setItem('sift_user_labels', JSON.stringify(userLabels)); }, [userLabels]);
   const knownContacts = useMemo(() => Array.from(new Set(
     emails
@@ -230,12 +234,12 @@ export default function App() {
   const [replyModalDraft, setReplyModalDraft] = useState<string>('');
 
   const handleOpenAssistant = useCallback((email?: EmailMessage) => {
-    if (!aiEnabled) { setIsSettingsModalOpen(true); setToast({type:'info',message:'Önce Ayarlar → Yapay Zekâ bölümünden çalışan bir model bağlayın.'}); return; }
+    if (!aiEnabled) { setIsSettingsModalOpen(true); setToast({type:'info',message:t('ui.assistant.connectFirst')}); return; }
     if (email) {
       setSelectedAssistantEmail(email);
     }
     setIsAssistantOpen(true);
-  }, [aiEnabled]);
+  }, [aiEnabled, t]);
 
   const handleSelectEmailForReply = useCallback((email: EmailMessage, initialDraft?: string) => {
     setReplyModalEmail(email);
@@ -314,7 +318,7 @@ export default function App() {
   }, []);
 
   const performRemoteMailAction = useCallback(async (email: EmailMessage, action: 'mark_read' | 'mark_unread' | 'trash' | 'archive') => {
-    if (!email.uid || !email.folder || !email.accountId) return;
+    if (!email.uid || !email.folder || !email.accountId) throw new Error(t('mailActions.missingIdentity'));
     const credentials = credentialsByAccount[email.accountId];
     if (!credentials) throw new Error('Bu işlem için hesaba yeniden giriş yapın.');
     const activeCredentials = await ensureFreshMicrosoftCredentials(credentials);
@@ -328,7 +332,7 @@ export default function App() {
     });
     if (!result.success || !result.verified) throw new Error('Posta sunucusu işlemi doğrulamadı.');
     return result;
-  }, [credentialsByAccount, updateAccountCredentials]);
+  }, [credentialsByAccount, updateAccountCredentials, t]);
 
   const handleOpenDetail = useCallback((item: EmailMessage) => {
     setDetailEmail(item);
@@ -675,6 +679,7 @@ export default function App() {
   };
 
   const handleRemoveAccount = (id: string) => {
+    clearOfflineAnalysis();
     const removedEmail = accounts.find(account => account.id === id)?.email.toLowerCase();
     if (mailCacheLoaded) {
       const snapshot = {
@@ -789,28 +794,7 @@ export default function App() {
         )
       );
 
-      // If AI suggested an auto rule and category is safe, automatically register the rule if not exists
-      if (analysis.suggestedFilterRule && analysis.isSafe && safeCat) {
-        setAutoRules((prev) => {
-          const exists = prev.some(
-            (r) => r.patternValue.toLowerCase() === analysis.suggestedFilterRule!.patternValue.toLowerCase()
-          );
-          if (exists) return prev;
-          return [
-            ...prev,
-            {
-              id: `rule-auto-${Date.now()}`,
-              category: safeCat,
-              patternType: analysis.suggestedFilterRule!.patternType as any,
-              patternValue: analysis.suggestedFilterRule!.patternValue,
-              isActive: true,
-              matchCount: 1,
-              createdAt: new Date().toISOString(),
-              description: analysis.suggestedFilterRule!.description,
-            },
-          ];
-        });
-      }
+      // AI rule suggestions remain suggestions. Rules are activated only in the user's rule editor.
 
       if (detailEmail && detailEmail.id === emailToAnalyze.id) {
         setDetailEmail((prev) =>
@@ -973,24 +957,18 @@ export default function App() {
 
   // Unsubscribe from email
   const handleUnsubscribe = (email: EmailMessage) => {
-    const unsubUrl = email.analysis?.unsubscribeUrl || email.listUnsubscribe;
+    const unsubUrl = safeUnsubscribeTarget(email.listUnsubscribe) || safeUnsubscribeTarget(email.analysis?.unsubscribeUrl);
     if (!unsubUrl) {
-      showToast('Bu e-postada aktif bir abonelikten çıkma bağlantısı tespit edilemedi.', 'error');
-      return;
+      showToast(t('mailActions.invalidUnsubscribe'), 'error');
+      return false;
     }
 
-    const httpMatch = unsubUrl.match(/https?:\/\/[^\s,>]+/i);
-    const mailtoMatch = unsubUrl.match(/mailto:([^\s,>]+)/i);
-
-    if (httpMatch) {
-      window.open(httpMatch[0], '_blank', 'noopener,noreferrer');
-      showToast('Abonelikten çıkma sayfası yeni sekmede açıldı.', 'success');
-    } else if (mailtoMatch) {
-      window.location.href = mailtoMatch[0];
-      showToast('Abonelikten çıkma e-postası taslağı oluşturuldu.', 'success');
+    if (unsubUrl.startsWith('mailto:')) {
+      window.location.href = unsubUrl;
+      showToast(t('mailActions.unsubscribeDraft'), 'info');
     } else {
-      window.open(unsubUrl, '_blank');
-      showToast('Abonelikten çıkma işlemi başlatıldı.', 'success');
+      window.open(unsubUrl, '_blank', 'noopener,noreferrer');
+      showToast(t('mailActions.unsubscribeOpened'), 'info');
     }
 
     setEmails((prev) =>
@@ -1001,13 +979,14 @@ export default function App() {
             analysis: {
               ...e.analysis,
               suggestedAction: 'keep_safe',
-              reasoning: `${e.analysis.reasoning} [Abonelikten çıkma işlemi başlatıldı]`,
+              reasoning: e.analysis.reasoning,
             },
           };
         }
         return e;
       })
     );
+    return true;
   };
 
   // Request Trash with Mandatory User Confirmation Dialog
@@ -1035,6 +1014,17 @@ export default function App() {
   };
 
   // Batch Trash
+  const trashConfirmedBatch = async (messages: EmailMessage[]) => {
+    const result = await executeConfirmedMailBatch(messages, email => performRemoteMailAction(email, 'trash'), email => {
+      setEmails(prev => prev.map(item => item.id === email.id ? { ...item, folderType: 'trash' } : item));
+      setSelectedEmailIds(prev => { const next = new Set(prev); next.delete(email.id); return next; });
+      setDetailEmail(prev => prev?.id === email.id ? null : prev);
+    });
+    showToast(t(result.remaining.length ? 'mailActions.partial' : 'mailActions.completed', {
+      completed: result.completed.length, remaining: result.remaining.length,
+    }), result.remaining.length ? 'error' : 'success');
+  };
+
   const handleBatchTrash = () => {
     const selectedList = emails.filter((e) => selectedEmailIds.has(e.id));
     if (selectedList.length === 0) return;
@@ -1046,59 +1036,33 @@ export default function App() {
       confirmLabel: `${selectedList.length} İletiyi Çöpe Taşı`,
       itemCount: selectedList.length,
       action: async () => {
-        for (const email of selectedList) await performRemoteMailAction(email, 'trash');
-        setEmails((prev) => prev.map((e) => selectedEmailIds.has(e.id) ? {...e, folderType:'trash'} : e));
-        setSelectedEmailIds(new Set());
-        showToast(`${selectedList.length} adet ileti çöp kutusuna taşındı.`, 'success');
+        await trashConfirmedBatch(selectedList);
       },
     });
   };
 
   // Unsubscribe & Purge All Sender History
   const handleUnsubscribeAndPurge = (email: EmailMessage) => {
-    const senderEmail = (email.fromEmail || email.from).toLowerCase();
-    const domain = extractDomain(senderEmail);
-
-    const matchingEmails = emails.filter((e) => {
-      const eSender = (e.fromEmail || e.from).toLowerCase();
-      return eSender === senderEmail || (domain && domain.length > 3 && eSender.includes(domain));
-    });
+    const matchingEmails = selectSenderHistory(email, emails);
+    if (!matchingEmails.length) { showToast(t('mailActions.noSenderHistory'), 'info'); return; }
 
     const senderDisplayName = email.fromName || email.fromEmail || email.from;
 
     setConfirmModal({
       isOpen: true,
       title: t('purgeModal.title'),
-      description: t('purgeModal.description', {
+      description: t('mailActions.senderPreview', {
         sender: senderDisplayName,
+        account: accounts.find(account => account.id === email.accountId)?.email || email.accountId,
         count: matchingEmails.length,
       }),
       confirmLabel: t('purgeModal.confirmLabel', { count: matchingEmails.length }),
       itemCount: matchingEmails.length,
       isDestructive: true,
       action: async () => {
-        handleUnsubscribe(email);
+        if (!handleUnsubscribe(email)) return;
 
-        const matchingIds = new Set(matchingEmails.map((e) => e.id));
-        for (const matched of matchingEmails) await performRemoteMailAction(matched, 'trash');
-        setEmails((prev) => prev.map((e) => matchingIds.has(e.id) ? {...e, folderType:'trash'} : e));
-        setSelectedEmailIds((prev) => {
-          const next = new Set(prev);
-          matchingIds.forEach((id) => next.delete(id));
-          return next;
-        });
-
-        if (detailEmail && matchingIds.has(detailEmail.id)) {
-          setDetailEmail(null);
-        }
-
-        showToast(
-          t('purgeModal.successToast', {
-            sender: senderDisplayName,
-            count: matchingEmails.length,
-          }),
-          'success'
-        );
+        await trashConfirmedBatch(matchingEmails);
       },
     });
   };
@@ -1114,10 +1078,8 @@ export default function App() {
       return;
     }
 
-    for (const item of selectedList) {
-      handleUnsubscribe(item);
-    }
-    showToast(`${selectedList.length} adet abonelikten çıkma işlemi tetiklendi.`, 'success');
+    const opened = selectedList.filter(item => handleUnsubscribe(item)).length;
+    showToast(t('mailActions.unsubscribeBatch', { count: opened }), 'info');
   };
 
   // Mark as safe override
@@ -1721,6 +1683,12 @@ export default function App() {
         onOpenDesktopModal={() => setIsDesktopModalOpen(true)}
         onOpenLoginModal={() => setIsLoginModalOpen(true)}
         onAIStatusChange={setAIEnabled}
+        onOpenAIHelp={() => {
+          if (!aiEnabled) return;
+          setSelectedAssistantEmail(null);
+          setIsSettingsModalOpen(false);
+          setIsAssistantOpen(true);
+        }}
       />
 
       {/* Dynamic In-Memory IMAP Connection Modal */}
@@ -1773,10 +1741,10 @@ export default function App() {
           whileTap={{ scale: 0.95 }}
           onClick={() => setIsAssistantOpen(true)}
           className="fixed bottom-20 md:bottom-6 right-5 z-30 flex items-center gap-2 px-4 py-3 rounded-full bg-linear-to-tr from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-xs shadow-xl shadow-emerald-500/25 transition-all border border-emerald-400/30"
-          title="Sift AI Asistanı Aç"
+          title={t('ui.assistant.open')}
         >
           <Sparkles className="w-4 h-4 text-emerald-100 animate-pulse" />
-          <span className="tracking-wide">AI Asistan</span>
+          <span className="tracking-wide">{t('ai.assistant')}</span>
         </motion.button>
       )}
 
@@ -1806,10 +1774,10 @@ export default function App() {
         theme={theme}
         availableEmails={emails}
         initialForward={composeForwardEmail}
-        onSent={({to,subject,body,accountId}) => {
+        onSent={({to,subject,body,bodyHtml,accountId}) => {
           const account=accounts.find(a=>a.id===accountId);
-          setEmails(prev=>[{id:`sent-${Date.now()}`,accountId,provider:account?.provider,from:account?.email||'',fromEmail:account?.email||'',to:[to],subject,date:new Date().toISOString(),snippet:body.slice(0,160),bodyText:body,isRead:true,folder:'Sent',folderType:'sent',labels:['SENT']},...prev]);
-          showToast('E-posta gönderildi.', 'success');
+          setEmails(prev=>[{id:`sent-${Date.now()}`,accountId,provider:account?.provider,from:account?.email||'',fromEmail:account?.email||'',to:[to],subject,date:new Date().toISOString(),snippet:body.slice(0,160),bodyText:body,bodyHtml,isRead:true,folder:'Sent',folderType:'sent',labels:['SENT']},...prev]);
+          showToast(t('ui.compose.sent'), 'success');
         }}
       />
 

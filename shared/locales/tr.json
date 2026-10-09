@@ -1,4 +1,30 @@
 {
+  "ui": {
+    "settings": {
+      "searchPlaceholder": "Ayarlarda ara",
+      "activeProvider": "Aktif AI sağlayıcısı",
+      "testHint": "Test işlemi anahtarı kaydetmez. Bağlantı doğrulandıktan sonra ayrıca ‘Bağla ve güvenli kaydet’ seçeneğini kullanın.",
+      "connect": "Bağla ve güvenli kaydet",
+      "connected": "Bağlantı güvenli biçimde kaydedildi. Sift Asistanı artık etkin."
+    },
+    "compose": {
+      "restore": "İleti penceresini geri aç",
+      "forwardedMessage": "İletilen ileti",
+      "date": "Tarih",
+      "fileTooLarge": "{{filename}}: {{max}} MB sınırını aşıyor.",
+      "attachmentsTooLarge": "Eklerin toplam boyutu {{max}} MB sınırını aşıyor.",
+      "sent": "E-posta gönderildi.",
+      "tooManyAttachments": "En fazla 20 ek ekleyebilirsiniz.",
+      "originalUnavailable": "Orijinal ileti alınamadı. Kaynak hesabı ve klasörü yeniden senkronize edin.",
+      "linkUrl": "Bağlantı adresi",
+      "insertLink": "Bağlantı ekle",
+      "invalidLink": "Geçerli bir http, https veya mailto bağlantısı girin."
+    },
+    "assistant": {
+      "connectFirst": "Önce Ayarlar → Yapay Zekâ bölümünden çalışan bir model bağlayın.",
+      "open": "Sift AI Asistanını aç"
+    }
+  },
   "app": {
     "title": "Sift Mail",
     "tagline": "AI-Powered Inbox",
@@ -120,6 +146,18 @@
   "ai": {"assistant":"AI Asistan"},
   "settings": {"title":"Ayarlar","tabs":{"general":"Genel","interface":"Arayüz","ai":"Yapay Zekâ","help":"Yardım","about":"Hakkında"},"general":{"language":"Dil","security":"Gizlilik ve güvenlik","trackers":"Takip piksellerini engelle","vault":"Şifreli kasa","desktop":"Masaüstü kurulumu"},"interface":{"theme":"Tema","customize":"Görünümü özelleştir","themes":{"light":"Yumuşak açık","dark":"Koyu","oled":"OLED","ocean":"Okyanus","forest":"Orman"},"accent":"Vurgu rengi","font":"Yazı tipi","fontSize":"Yazı boyutu","pageSize":"Ekrandaki mail sayısı","background":"Arka plan resmi"},"ai":{"title":"Yapay zekâ sağlayıcıları","description":"Gemini, GPT, Claude veya yerel Ollama modelini bağlayın. Anahtarlar sunucunun şifreli kasasında tutulur.","local":"Yerel","apiKey":"API anahtarı","model":"Model adı (isteğe bağlı)","test":"Bağlantıyı test et","save":"Kaydet","saving":"İşleniyor…","success":"Bağlantı başarılı.","error":"Bağlantı kurulamadı.","allowCloudBody":"Bulut yapay zekâsına e-posta içeriği gönderilmesine izin ver","privacyHint":"Kapalıyken bulut sağlayıcılara yalnızca gönderici, konu ve kısa özet gönderilir. Ekler hiçbir zaman otomatik yüklenmez."},"help":{"title":"Yardım merkezi","askAI":"AI asistana sor","accounts":{"q":"Nasıl hesap eklerim?","a":"Hesap ekle düğmesinden sağlayıcı seçin; OAuth mevcutsa sağlayıcının sayfasını, aksi halde uygulama parolasıyla IMAP'i kullanın."},"sync":{"q":"Senkronizasyon nasıl çalışır?","a":"Uygulamaya hemen girersiniz; son iletiler arka planda klasör bazında yüklenir."},"password":{"q":"Parolam saklanıyor mu?","a":"Varsayılan oturum bilgileri yalnızca bellekte tutulur; isterseniz şifreli kasayı kullanabilirsiniz."},"ai":{"q":"AI mail gönderebilir mi?","a":"AI öneri hazırlar; gönderme ve silme gibi işlemler kullanıcı onayı gerektirir."}},"about":{"title":"Sift Mail hakkında","description":"Gmail, Outlook, Apple, Yandex ve standart IMAP/SMTP hesaplarını tek yerde yöneten özelleştirilebilir masaüstü mail istemcisi.","version":"Sürüm","engine":"Altyapı","developer":"Sahip / geliştirici","hidden":"Şimdilik gizli"}},
   "integrations": {"title":"Entegrasyonlar","description":"İsteğe bağlı AI ve karar sağlayıcılarını yönetin.","refresh":"Yenile","configure":"Yapılandır","test":"Test et","enable":"Etkinleştir","disable":"Devre dışı bırak","save":"Güvenli kaydet","apiKey":"API anahtarı","endpoint":"Uç nokta (sağlayıcı belgesi)","model":"Model","done":"İşlem tamamlandı.","failed":"İşlem başarısız.","localFallback":"Jev kullanılamazsa Sift Local otomatik ve güvenli biçimde devreye girer. Eklentiler mail gönderemez veya silemez.","kinds":{"ai-provider":"AI sağlayıcısı","decision-provider":"Karar sağlayıcısı"},"capabilities":{"generate":"Metin üretme","summarize":"Özetleme","classify":"Sınıflandırma","draft-reply":"Yanıt taslağı","constrained-decision":"Kısıtlı karar"},"status":{"NOT_CONFIGURED":"YAPILANDIRILMADI","CONFIGURED":"YAPILANDIRILDI","CONNECTED":"BAĞLI","DISABLED":"KAPALI","ERROR":"HATA"}},
+  "mailActions": {
+    "missingIdentity": "İletinin sunucu kimliği eksik. Hesabı senkronize edip tekrar deneyin; ileti değiştirilmedi.",
+    "invalidUnsubscribe": "Geçerli bir abonelikten çıkma bağlantısı bulunamadı. Hiçbir ileti değiştirilmedi.",
+    "unsubscribeOpened": "Abonelikten çıkma sayfası açılması istendi. İşlemi sağlayıcının sayfasında tamamlayın.",
+    "unsubscribeDraft": "Abonelikten çıkma e-postası taslağının açılması istendi. Henüz gönderilmedi.",
+    "unsubscribeBatch": "{{count}} abonelik bağlantısının açılması istendi. Abonelik iptalleri henüz doğrulanmadı.",
+    "completed": "{{completed}} ileti çöp kutusuna taşındı.",
+    "partial": "{{completed}} ileti taşındı; {{remaining}} ileti taşınamadı. İşlem durduruldu.",
+    "failed": "İşlem tamamlanamadı. Bağlantınızı kontrol edip tekrar deneyin.",
+    "noSenderHistory": "Bu hesapta temizlenebilecek bir gönderici geçmişi bulunamadı.",
+    "senderPreview": "{{account}} hesabında {{sender}} adresinden gelen, yüklenmiş {{count}} ileti çöp kutusuna taşınacak. Diğer hesaplar, gönderenler ve gönderilmiş iletiler etkilenmez. Abonelikten çıkma sayfası da açılacak."
+  },
   "toast": {
     "markedSafe": "İleti güvenli olarak onaylandı ve arşivlendi.",
     "unsubStarted": "Abonelikten çıkma işlemi başlatıldı.",
