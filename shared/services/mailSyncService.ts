@@ -3,30 +3,24 @@ import { getApiUrl } from './apiConfig';
 import { safeFetchJson } from './apiClient';
 import { ApiError } from './apiClient';
 
-export interface DynamicSyncCredentials {
-  email: string;
-  password: string; // 16-character Google App Password or IMAP password
-  accessToken?: string;
-  accessTokenExpiresAt?: number;
-  host?: string;
-  port?: number;
-  secure?: boolean;
-  smtpHost?: string;
-  smtpPort?: number;
-  smtpSecure?: boolean;
-  maxResults?: number;
-  folder?: string;
-  offset?: number;
-  sinceUid?: number;
-  expectedUidValidity?: string;
-  accountId?: string;
-}
+import type { DynamicSyncCredentials } from './accountService';
+import type { FolderDelta } from '../../core/sync/imap';
+export type { DynamicSyncCredentials } from './accountService';
+// Compatibility for consumers of the previous Microsoft-specific export.
+export { ensureFreshAccountCredentials as ensureFreshMicrosoftCredentials } from './accountService';
 
 export interface BackendSyncMessage {
   id: string;
   uid: number;
   uidValidity?: string;
   messageId?: string;
+  to?: string[];
+  cc?: string[];
+  replyTo?: string[];
+  inReplyTo?: string;
+  references?: string[];
+  threadId?: string;
+  providerLabels?: string[];
   accountId?: string;
   subject: string;
   from: string;
@@ -59,29 +53,8 @@ export interface BackendSyncResponse {
   hint?: string;
   incremental?: boolean;
   retryable?: boolean;
-}
-
-const microsoftRefreshes = new Map<string, Promise<{ accessToken: string; expiresAt: number }>>();
-
-export async function ensureFreshMicrosoftCredentials<T extends DynamicSyncCredentials>(credentials: T): Promise<T> {
-  if (!credentials.accessToken || credentials.host?.toLowerCase() !== 'outlook.office365.com') return credentials;
-  if (credentials.accessTokenExpiresAt && credentials.accessTokenExpiresAt > Date.now() + 60_000) return credentials;
-
-  const email = credentials.email.trim().toLowerCase();
-  let pending = microsoftRefreshes.get(email);
-  if (!pending) {
-    pending = (async () => {
-      const result = await safeFetchJson<{ success: boolean; accessToken?: string; expiresIn?: number; error?: string }>('/api/oauth/microsoft/refresh', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }),
-      });
-      if (!result.success || !result.accessToken) throw new Error(result.error || 'Microsoft oturumu yenilenemedi. Yeniden giriş yapın.');
-      return { accessToken: result.accessToken, expiresAt: Date.now() + Math.max(60, result.expiresIn || 3600) * 1000 };
-    })();
-    microsoftRefreshes.set(email, pending);
-    void pending.finally(() => microsoftRefreshes.delete(email)).catch(() => {});
-  }
-  const fresh = await pending;
-  return { ...credentials, accessToken: fresh.accessToken, accessTokenExpiresAt: fresh.expiresAt };
+  code?: string;
+  delta?: FolderDelta;
 }
 
 /**
@@ -91,8 +64,8 @@ export async function ensureFreshMicrosoftCredentials<T extends DynamicSyncCrede
  */
 export async function syncEmailsFromBackend(
   credentials: DynamicSyncCredentials,
-  options: { retries?: number; retryDelayMs?: number } = {},
-): Promise<{ messages: EmailMessage[]; accountEmail: string; provider: MailProvider; mailboxes: MailboxFolder[]; incremental: boolean }> {
+  options: { retries?: number; retryDelayMs?: number; signal?: AbortSignal } = {},
+): Promise<{ messages: EmailMessage[]; accountEmail: string; provider: MailProvider; mailboxes: MailboxFolder[]; incremental: boolean; delta?: FolderDelta }> {
   const url = getApiUrl('/api/emails/sync');
 
   const payload = {
@@ -108,6 +81,7 @@ export async function syncEmailsFromBackend(
     offset: credentials.offset,
     sinceUid: credentials.sinceUid,
     expectedUidValidity: credentials.expectedUidValidity,
+    knownUids: credentials.knownUids,
   };
 
   try {
@@ -117,6 +91,7 @@ export async function syncEmailsFromBackend(
       try {
         data = await safeFetchJson<BackendSyncResponse>(url, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+          signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(60_000)]) : AbortSignal.timeout(60_000),
         });
         break;
       } catch (error) {
@@ -129,7 +104,7 @@ export async function syncEmailsFromBackend(
 
     if (!data.success) {
       const errorMsg = data.error || data.hint || 'IMAP senkronizasyonu başarısız oldu.';
-      throw new Error(errorMsg);
+      throw new ApiError(errorMsg, data.retryable ? 503 : 200, { code: data.code });
     }
 
     const rawList = data.messages || [];
@@ -154,6 +129,13 @@ export async function syncEmailsFromBackend(
         uid: m.uid,
         uidValidity: m.uidValidity,
         messageId: m.messageId,
+        to: m.to,
+        cc: m.cc,
+        replyTo: m.replyTo,
+        inReplyTo: m.inReplyTo,
+        references: m.references,
+        threadId: m.threadId,
+        providerLabels: m.providerLabels || [],
         listUnsubscribe: m.listUnsubscribe || '',
         isRead: Boolean(m.isRead),
         folder: m.folder || 'INBOX',
@@ -168,9 +150,10 @@ export async function syncEmailsFromBackend(
       accountEmail,
       provider,
       incremental: Boolean(data.incremental),
+      delta: data.delta,
     };
   } catch (err: any) {
-    console.error('MailSyncService hatası:', err);
+    console.error('[Sift Mail] SYNC_FAILED');
     throw err;
   }
 }

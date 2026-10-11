@@ -14,16 +14,19 @@ import {
   Download,
   Info,
 } from 'lucide-react';
-import { AutoRule, SafeCategory } from '../types';
+import { AutoRule, SafeCategory,ConnectedAccount,FolderType } from '../types';
+import {useTranslation} from 'react-i18next';
 import { CATEGORIES_META } from '../../core/rules/categoryManager';
 
 interface AutoRuleModalProps {
   isOpen: boolean;
   onClose: () => void;
   rules: AutoRule[];
+  accounts?:ConnectedAccount[];
   onAddRule: (rule: Omit<AutoRule, 'id' | 'createdAt' | 'matchCount'>) => void;
   onToggleRule: (id: string) => void;
   onDeleteRule: (id: string) => void;
+  onScopeChange?: (id:string,accountIds:string[]|undefined,folderTypes:FolderType[]|undefined)=>void;
   autoWatcherEnabled: boolean;
   onToggleAutoWatcher: (enabled: boolean) => void;
 }
@@ -32,12 +35,17 @@ export const AutoRuleModal: React.FC<AutoRuleModalProps> = ({
   isOpen,
   onClose,
   rules,
+  accounts=[],
   onAddRule,
   onToggleRule,
   onDeleteRule,
+  onScopeChange,
   autoWatcherEnabled,
   onToggleAutoWatcher,
 }) => {
+  const {t}=useTranslation();
+  const [scopeAccount,setScopeAccount]=useState('all');
+  const [scopeFolder,setScopeFolder]=useState<FolderType|'all'>('inbox');
   const [newCategory, setNewCategory] = useState<SafeCategory>('work');
   const [newPatternType, setNewPatternType] = useState<'domain' | 'from' | 'subject'>('domain');
   const [newPatternValue, setNewPatternValue] = useState('');
@@ -55,6 +63,8 @@ export const AutoRuleModal: React.FC<AutoRuleModalProps> = ({
       patternType: newPatternType,
       patternValue: newPatternValue.trim().toLowerCase(),
       isActive: true,
+      ...(scopeAccount!=='all'?{accountIds:[scopeAccount]}:{}),
+      ...(scopeFolder!=='all'?{folderTypes:[scopeFolder]}:{}),
       description:
         newDescription.trim() ||
         `${newPatternValue.trim()} eşleşmesi "${CATEGORIES_META[newCategory].name}" kategorisine aktarılır`,
@@ -210,6 +220,10 @@ export const AutoRuleModal: React.FC<AutoRuleModalProps> = ({
             </div>
 
             {/* Description & Add button */}
+            <div className="flex flex-wrap gap-3 text-xs">
+              <label>{t('workflow.ruleAccount')}<select aria-label={t('workflow.ruleAccount')} value={scopeAccount} onChange={event=>setScopeAccount(event.target.value)} className="ml-2"><option value="all">{t('workflow.allAccounts')}</option>{accounts.map(account=><option key={account.id} value={account.id}>{account.email}</option>)}</select></label>
+              <label>{t('workflow.ruleFolder')}<select aria-label={t('workflow.ruleFolder')} value={scopeFolder} onChange={event=>setScopeFolder(event.target.value as FolderType|'all')} className="ml-2"><option value="all">{t('workflow.allFolders')}</option>{(['inbox','spam','sent','drafts','archive','trash','other'] as const).map(folder=><option key={folder} value={folder}>{t(`folders.${folder}`,{defaultValue:folder})}</option>)}</select></label>
+            </div>
             <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
               <input
                 type="text"
@@ -279,6 +293,10 @@ export const AutoRuleModal: React.FC<AutoRuleModalProps> = ({
                               {rule.description}
                             </p>
                           )}
+                          {onScopeChange && <div className="flex gap-2 mt-1 text-[10px]"><select aria-label={t('workflow.ruleAccount')} value={rule.accountIds?.[0] || 'all'} onChange={event=>onScopeChange(rule.id,event.target.value==='all'?undefined:[event.target.value],rule.folderTypes)}><option value="all">{t('workflow.allAccounts')}</option>{accounts.map(account=><option key={account.id} value={account.id}>{account.email}</option>)}</select>
+                            <select aria-label={t('workflow.ruleFolder')} value={rule.folderTypes?.[0] || 'all'} onChange={event=>onScopeChange(rule.id,rule.accountIds,event.target.value==='all'?undefined:[event.target.value as FolderType])}><option value="all">{t('workflow.allFolders')}</option>{(['inbox','spam','sent','drafts','archive','trash','other'] as const).map(folder=><option key={folder} value={folder}>{t(`folders.${folder}`,{defaultValue:folder})}</option>)}</select></div>}
+                          <p className="text-[10px] opacity-60">{!rule.accountIds && !rule.folderTypes?t('workflow.legacyScope'):
+                            `${rule.accountIds?.map(id=>accounts.find(account=>account.id===id)?.email || id).join(', ') || t('workflow.allAccounts')} · ${rule.folderTypes?.map(folder=>t(`folders.${folder}`,{defaultValue:folder})).join(', ') || 'All'}`}</p>
                         </div>
                       </div>
 

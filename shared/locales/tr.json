@@ -1,4 +1,53 @@
 {
+  "folders": {"inbox":"Gelen","spam":"Spam","sent":"Giden","drafts":"Taslaklar","archive":"Arşiv","trash":"Çöp Kutusu","other":"Diğer"},
+  "workflow": {
+        "syncProviderLabels": "Kategori etiketlerini sağlayıcıya uygula",
+        "noLabelTargets": "Bu görünümde etiket uygulanabilecek kategorili ileti yok.",
+        "labelBatch": "{{completed}} sağlayıcı etiket işlemi doğrulandı; {{remaining}} kaldı. Desteklenmeyen sunucu veya değişen ileti işlemi durdurur.",
+        "rules": "Mail kuralları",
+        "allFolders": "Tüm klasörler",
+        "sentCopyFailed": "İleti teslim edildi ancak sağlayıcının Gönderilenler kopyası doğrulanamadı. Yeniden göndermeyin; sağlayıcının Gönderilenler klasörünü kontrol edin.",
+        "draftOriginalPreserved": "Sağlayıcıdaki taslak silinmeyecek veya değiştirilmeyecek.",
+        "searchScope": "Arama yerel olarak eşitlenmiş mailleri kapsar; henüz indirilmemiş sağlayıcı geçmişini değil.",
+    "replyAll": "Tümünü yanıtla",
+    "partialSend": "Bazı alıcılar reddedildi. Teslim edilenlere yeniden gönderilmeyecek; taslakta yalnızca reddedilen alıcılar kaldı.",
+    "saveProviderCopy": "Sağlayıcının Taslaklar klasörüne kopya kaydet",
+    "draftCopyHint": "Yeni bir kopya oluşturur; mevcut sağlayıcı taslakları değiştirilmez veya silinmez.",
+    "draftSaved": "Taslak kopyası sağlayıcıya kaydedildi. Eski kopyalar korundu.",
+    "draftFailed": "Taslak kaydı doğrulanamadı. Tekrar denemeden önce sağlayıcının Taslaklar klasörünü kontrol edin.",
+    "continueDraft": "Taslağa devam et (orijinali korunur)",
+    "thread": "Konuşma",
+    "providerLabels": "Sağlayıcı etiketleri / anahtar sözcükler",
+    "addProviderLabel": "Sağlayıcı etiketi ekle",
+    "removeProviderLabel": "Sağlayıcı etiketini kaldır",
+    "labelPreview": "Mevcut hesap/klasördeki {{count}} yerel iletiye sağlayıcı etiketleri uygulansın mı? Yerel etiketler korunur.",
+    "labelConfirm": "Etiketleri uygula",
+    "searchHint": "Bu görünümdeki yerel olarak eşitlenmiş tüm içerikte ara.",
+    "allAccounts": "Tüm hesaplar",
+    "ruleAccount": "Hesap kapsamı",
+    "ruleFolder": "Klasör kapsamı",
+    "legacyScope": "Eski kural: tüm hesaplar / klasörler",
+    "inboxScope": "Yalnızca gelen kutusu",
+    "unsubscribePreview": "Seçilen {{count}} iletinin abonelikten çıkma sayfası açılsın mı? Bu işlem iptali doğrulamaz.",
+    "providerLabelHint": "Sağlayıcı etiketleri yerel etiketlerden ayrıdır. Standart IMAP anahtar sözcükleri sunucu desteği gerektirir."
+},
+  "sync": {
+    "newMessages": "yeni ileti",
+    "reauthRequired": "Hesap yetkisi sona erdi. Hesabı yeniden bağlayın; kayıtlı mailleriniz korunuyor."
+  },
+  "oauth": {
+    "browser": "Giriş sayfası tarayıcıda açıldı. Yetkilendirmeyi tamamlayıp Sift'e dönün.",
+    "failed": "Hesap girişi tamamlanamadı.",
+    "saved": "Uygulama kaydı güvenli kasaya kaydedildi. Sağlayıcıyla giriş yapabilirsiniz.",
+    "configure": "OAuth uygulama kaydı",
+    "cancel": "Girişi iptal et",
+    "setupHelp": "Google için Desktop, Microsoft için Public client kaydı gerekir. Kurulum rehberi: docs/oauth-desktop.md. IMAP/SMTP izni gerekir; API anahtarı burada kullanılmaz.",
+    "provider": "OAuth sağlayıcısı",
+    "secret": "Google client secret (isteğe bağlı)",
+    "save": "Güvenli kaydet",
+    "manualHelp": "Uygulama parolasıyla manuel IMAP/SMTP bağlantısı kurun.",
+    "reconnect": "Yeniden bağlan"
+  },
   "ui": {
     "settings": {
       "searchPlaceholder": "Ayarlarda ara",
@@ -158,6 +207,7 @@
     "noSenderHistory": "Bu hesapta temizlenebilecek bir gönderici geçmişi bulunamadı.",
     "senderPreview": "{{account}} hesabında {{sender}} adresinden gelen, yüklenmiş {{count}} ileti çöp kutusuna taşınacak. Diğer hesaplar, gönderenler ve gönderilmiş iletiler etkilenmez. Abonelikten çıkma sayfası da açılacak."
   },
+  "localData": {"title":"Yerel veriler","description":"Mailler, taslaklar, etiketler, kurallar ve eşitleme bilgileri bu cihazda şifreli saklanır.","password":"Yedek parolası","passwordHint":"En az 12 karakter kullanın. Bu parola kaydedilmez; kaybederseniz yedeği açamazsınız.","export":"Şifreli yedeği indir","file":"Yedek dosyası","restoreHint":"Geri yükleme, yerel posta verilerini ve hesap ayarlarını değiştirir. Yeniden giriş gerekir; sağlayıcıdaki mailler ve kimlik bilgileri değişmez.","restore":"Yedeği geri yükle","confirm":"Bu cihazın yerel posta verileri ve hesap ayarları bu yedekle değiştirilsin mi? Başka bir yedek olmadan geri alınamaz.","exported":"Şifreli yedek indirildi.","failed":"Yedek işlemi başarısız. Dosyayı ve parolayı kontrol edin; mevcut veriler korunuyor.","busy":"İşleniyor…"},
   "toast": {
     "markedSafe": "İleti güvenli olarak onaylandı ve arşivlendi.",
     "unsubStarted": "Abonelikten çıkma işlemi başlatıldı.",

@@ -29,7 +29,7 @@ class FakeImap {
  async messageFlagsAdd(){this.flags=new Set(['\\Seen']);}
  async messageFlagsRemove(){this.flags=new Set();}
  async messageMove(uid,destination){this.moved={uid,destination};}
- async fetchOne(uid,options){return this.moved?false:{uid,flags:this.flags||new Set(),...(options?.source?{source:scenario.attachmentRaw?attachmentRaw:raw}:{})};}
+ async fetchOne(uid,options){return this.moved?false:{uid,size:(scenario.attachmentRaw?attachmentRaw:raw).length,envelope:{messageId:'<fixture@example.com>'},flags:this.flags||new Set(),...(options?.source?{source:scenario.attachmentRaw?attachmentRaw:raw}:{})};}
 }
 const compiled=buildSync({entryPoints:['core/sync/imap.ts'],bundle:true,platform:'node',format:'cjs',packages:'external',write:false}).outputFiles[0].text;
 const instance=new Module(path.resolve('core/sync/test-module.cjs'),module);
@@ -88,7 +88,7 @@ test('incoming attachment metadata can be downloaded by UID',async()=>{
  scenario={attachmentRaw:true};
  const result=await fetchImapMessages({...options,folder:'INBOX'},1);
  assert.deepEqual(result.messages[0].attachments,[{index:0,filename:'report.pdf',contentType:'application/pdf',size:11}]);
- const attachment=await fetchImapAttachment({...options,folder:'INBOX',uid:result.messages[0].uid,index:0});
+ const attachment=await fetchImapAttachment({...options,folder:'INBOX',uid:result.messages[0].uid,index:0,expectedUidValidity:result.messages[0].uidValidity});
  assert.equal(Buffer.from(attachment.content,'base64').toString(),'PDF fixture');
  assert.equal(attachment.filename,'report.pdf');
 });
@@ -108,8 +108,9 @@ test('JSON containing an HTML email is valid API data',async()=>{
  await assert.rejects(()=>parser.exports.parseResponseSafe(new Response('<html>404</html>',{status:404})));
 });
 test('real IMAP actions are independently verified',async()=>{
- const read=await performImapAction({...options,uid:1,sourceFolder:'INBOX',action:'mark_read'});
+ scenario={};
+ const read=await performImapAction({...options,accountEmail:options.auth.user,expectedUidValidity:'1',uid:1,sourceFolder:'INBOX',action:'mark_read'});
  assert.deepEqual(read,{success:true,verified:true});
- const trash=await performImapAction({...options,uid:1,sourceFolder:'INBOX',action:'trash'});
+ const trash=await performImapAction({...options,accountEmail:options.auth.user,expectedUidValidity:'1',uid:1,sourceFolder:'INBOX',action:'trash'});
  assert.equal(trash.success,true);assert.equal(trash.verified,true);assert.equal(trash.destination,'[Gmail]/Çöp Kutusu');
 });

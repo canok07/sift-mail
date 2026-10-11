@@ -3,15 +3,28 @@ const path=require('node:path');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const {_electron,expect}=require('@playwright/test');
+const asar=require('@electron/asar');
 (async()=>{
- const app=path.resolve('release/win-unpacked');
+ const windows=process.platform==='win32';
+ const app=path.resolve(windows?'release/win-unpacked':'release/linux-unpacked');
+ const executable=path.join(app,windows?'Sift Mail.exe':'sift-mail');
  const dist=path.join(app,'resources/app.asar/dist');
+ // Do not accidentally pass by resolving a missing dependency from the source
+ // checkout's node_modules above release/. The installed app must be standalone.
+ for(const dependency of ['express','zod','nodemailer','imapflow','mailparser','dotenv','cors','telegraf','@google/genai']){
+  assert.ok(asar.statFile(path.join(app,'resources/app.asar'),path.join('node_modules',...dependency.split('/'),'package.json')),`Missing packaged dependency: ${dependency}`);
+ }
  const data=path.resolve('.test-data/package');fs.mkdirSync(data,{recursive:true});
- const child=fork(path.join(dist,'server.cjs'),[],{execPath:path.join(app,'Sift Mail.exe'),cwd:data,env:{...process.env,ELECTRON_RUN_AS_NODE:'1',NODE_ENV:'production',HOST:'127.0.0.1',PORT:'47836',SIFT_DATA_DIR:data,SIFT_DIST_PATH:dist},stdio:['ignore','ignore','pipe','ipc']});
+ const child=fork(path.join(dist,'server.cjs'),[],{execPath:executable,cwd:data,env:{...process.env,ELECTRON_RUN_AS_NODE:'1',NODE_ENV:'production',HOST:'127.0.0.1',PORT:'47836',SIFT_DATA_DIR:data,SIFT_DIST_PATH:dist},stdio:['ignore','ignore','pipe','ipc']});
  try {
   await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Packaged server startup timeout')),20000);child.on('message',m=>{if(m.type==='sift-ready'){clearTimeout(timer);resolve();}});child.on('error',reject);child.on('exit',code=>{clearTimeout(timer);reject(new Error('Packaged server exit: '+code));});});
   const base='http://127.0.0.1:47836';
   assert.equal((await(await fetch(base+'/api/health')).json()).status,'ok');
+  const {token}=await(await fetch(base+'/api/auth/session')).json();
+  const saved=await fetch(base+'/api/local/mail-cache',{method:'POST',headers:{'Content-Type':'application/json','x-sift-key':token},body:JSON.stringify({snapshot:{version:1,messages:[{id:'packaged-sqlite',accountId:'synthetic-package',folder:'INBOX',subject:'SQLite packaged fixture'}],composeDraft:null,replyDrafts:{}}})});
+  assert.equal(saved.status,200,'Packaged Electron Node runtime must support encrypted SQLite persistence');
+  const stored=await(await fetch(base+'/api/local/mail-store/messages?accountId=synthetic-package',{headers:{'x-sift-key':token}})).json();
+  assert.equal(stored.messages[0].subject,'SQLite packaged fixture');
   const html=await(await fetch(base)).text();
   assert.match(html,/<div id="root">/);
   const scripts=[...html.matchAll(/src="([^"]+\.js)"/g)];assert.ok(scripts.length);
@@ -21,7 +34,7 @@ const {_electron,expect}=require('@playwright/test');
  // Use a disposable profile: never open the installed user's accounts or cache.
  const profile=path.resolve('.test-data/desktop');fs.mkdirSync(profile,{recursive:true});
  const desktopEnv={...process.env};delete desktopEnv.ELECTRON_RUN_AS_NODE;
- const desktop=await _electron.launch({executablePath:path.join(app,'Sift Mail.exe'),args:[`--user-data-dir=${profile}`],env:desktopEnv,timeout:40000});
+ const desktop=await _electron.launch({executablePath:executable,args:[`--user-data-dir=${profile}`],env:desktopEnv,timeout:40000});
  try {
   const actualProfile=await desktop.evaluate(({app})=>app.getPath('userData'));
   assert.equal(path.resolve(actualProfile).toLowerCase(),profile.toLowerCase(),'Desktop must use the disposable test profile');

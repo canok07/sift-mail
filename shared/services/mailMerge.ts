@@ -1,4 +1,5 @@
 import type { EmailMessage } from '../types';
+import { reconcilePendingSent } from '../../core/mail/workflows';
 
 function uidGeneration(email: EmailMessage): string | null {
   if (!email.uid || !email.id.startsWith('imap-')) return null;
@@ -24,6 +25,7 @@ export function mergeMailRefresh(
 
   const retained = existing.filter(email => {
     if (incomingById.has(email.id)) return false;
+    if(email.pendingMove || email.pendingSent)return true;
     if (email.accountId !== accountId || !email.folder || !folders.has(email.folder)) return true;
     const boundary = minUidByFolder.get(email.folder);
     return boundary !== undefined && Boolean(email.uid && email.uid < boundary) &&
@@ -40,5 +42,5 @@ export function mergeMailRefresh(
       labels: Array.from(new Set([...(email.labels || []), ...(previous.labels || []).filter(label => label.startsWith('user:'))])),
     };
   });
-  return { messages: [...mergedIncoming, ...retained], added: mergedIncoming.filter(email => !existingById.has(email.id)) };
+  return { messages: reconcilePendingSent([...mergedIncoming, ...retained]), added: mergedIncoming.filter(email => !existingById.has(email.id)) };
 }

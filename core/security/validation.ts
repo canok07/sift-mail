@@ -14,6 +14,7 @@ export const VaultSaveSchema = z.object({
     .regex(/^[a-zA-Z0-9_\-\.]+$/, 'Anahtar yalnızca harf, rakam, altçizgi, tire veya nokta içerebilir.'),
   value: z.string().min(1, 'Değer boş olamaz.').max(10000, 'Değer boyutu çok büyük.'),
   label: z.string().trim().max(128).optional(),
+  accountEmail: z.string().trim().email().max(254).optional(),
   category: z
     .enum(['imap_password', 'gemini_api_key', 'smtp_password', 'custom_token', 'telegram'])
     .or(z.string().max(64))
@@ -23,9 +24,13 @@ export const VaultSaveSchema = z.object({
 export const LocalMailSnapshotSchema = z.object({
   snapshot: z.object({
     version: z.literal(1),
-    messages: z.array(z.object({ id: z.string().min(1).max(500), accountId: z.string().min(1).max(100) }).passthrough()).max(5000),
+    messages: z.array(z.object({ id: z.string().min(1).max(500), accountId: z.string().min(1).max(100) }).passthrough()).max(100000),
     composeDraft: z.record(z.string(), z.unknown()).nullable(),
     replyDrafts: z.record(z.string(), z.unknown()),
+    labels: z.array(z.record(z.string(),z.unknown())).max(10000).optional(),
+    accounts: z.array(z.record(z.string(),z.unknown())).max(1000).optional(),
+    rules: z.array(z.record(z.string(),z.unknown())).max(10000).optional(),
+    syncStates: z.array(z.record(z.string(),z.unknown())).max(100000).optional(),
   }),
 });
 
@@ -45,7 +50,8 @@ export const ImapConnectSchema = z.object({
   folder: z.string().max(255).optional(),
   folders: z.array(z.string().max(255)).optional(),
   offset: z.coerce.number().int().min(0).optional(),
-  sinceUid: z.coerce.number().int().positive().optional(),
+  sinceUid: z.coerce.number().int().min(0).max(4294967295).optional(),
+  knownUids: z.array(z.number().int().positive().max(4294967295)).max(1000).optional(),
   expectedUidValidity: z.string().max(40).optional(),
   syncAllFolders: z.boolean().optional(),
   accountId: z.string().max(100).optional(),
@@ -54,17 +60,29 @@ export const ImapConnectSchema = z.object({
 
 export const ImapFetchSchema = ImapConnectSchema.extend({
   maxResults: z.coerce.number().int().min(1).max(100).optional().default(20),
+}).superRefine((value,ctx) => {
+  if (value.knownUids?.length && (!value.folder || !value.expectedUidValidity)) ctx.addIssue({code:'custom',message:'Klasör ve UIDVALIDITY gereklidir.',path:['knownUids']});
 });
 
 export const ImapActionSchema = ImapConnectSchema.omit({ folder: true, folders: true, offset: true, syncAllFolders: true }).extend({
+  accountId: z.string().trim().min(1).max(100),
+  accountEmail: z.string().trim().email().max(254),
+  expectedUidValidity: z.string().regex(/^[1-9]\d{0,9}$/).refine(value => Number(value) <= 4294967295),
+  messageId: z.string().trim().min(1).max(500).optional(),
   uid: z.coerce.number().int().positive(),
   sourceFolder: z.string().trim().min(1).max(255),
   action: z.enum(['mark_read', 'mark_unread', 'trash', 'archive', 'move']),
   destination: z.string().trim().min(1).max(255).optional(),
+}).refine(data => data.accountEmail.toLowerCase() === data.auth.user.trim().toLowerCase(), { message: 'IMAP_ACCOUNT_IDENTITY_MISMATCH' });
+
+export const AccountRemovalSchema = z.object({
+  accountId: z.string().trim().min(1).max(100),
+  email: z.string().trim().email().max(254),
 });
 
 export const ImapAttachmentSchema = ImapConnectSchema.omit({ folders: true, offset: true, syncAllFolders: true }).extend({
   folder: z.string().trim().min(1).max(255),
+  messageId: z.string().trim().min(1).max(500).optional(),
   uid: z.coerce.number().int().positive(),
   index: z.coerce.number().int().min(0).max(100),
 });
@@ -76,7 +94,8 @@ export const ImapRawMessageSchema = ImapAttachmentSchema.omit({ index: true }).e
 
 export const EmailSyncSchema = z.object({
   offset: z.coerce.number().int().min(0).optional(),
-  sinceUid: z.coerce.number().int().positive().optional(),
+  sinceUid: z.coerce.number().int().min(0).max(4294967295).optional(),
+  knownUids: z.array(z.number().int().positive().max(4294967295)).max(1000).optional(),
   expectedUidValidity: z.string().max(40).optional(),
   email: z.string().trim().email('Geçerli bir e-posta adresi girin.').optional().or(z.literal('')),
   password: z.string().optional().or(z.literal('')),
@@ -88,6 +107,8 @@ export const EmailSyncSchema = z.object({
   accountId: z.string().max(100).optional(),
   provider: z.string().max(50).optional(),
   maxResults: z.coerce.number().int().min(1).max(100).optional().default(20),
+}).superRefine((value,ctx) => {
+  if (value.knownUids?.length && (!value.folder || !value.expectedUidValidity)) ctx.addIssue({code:'custom',message:'Klasör ve UIDVALIDITY gereklidir.',path:['knownUids']});
 });
 
 export const SmtpConnectSchema = z.object({
@@ -110,6 +131,7 @@ export const SmtpSendSchema = z
   .object({
     config: SmtpConnectSchema.optional(),
     smtp: SmtpConnectSchema.optional(),
+    sentConfig: ImapConnectSchema.extend({accountId:z.string().min(1).max(100),accountEmail:z.string().email().max(254)}).optional(),
     mail: z.object({
       to: z.string().trim().min(1, 'Alıcı e-posta adresi zorunludur.').max(500),
       cc: z.string().trim().max(500).optional(),
@@ -118,7 +140,8 @@ export const SmtpSendSchema = z
       text: z.string().min(1, 'Mesaj içeriği boş olamaz.').max(200000),
       html: z.string().max(500000).optional(),
       replyTo: z.string().trim().max(500).optional(),
-      inReplyTo: z.string().trim().max(500).optional(),
+      inReplyTo: z.string().regex(/^<[^<>\s\r\n]{1,490}>$/).optional(),
+      references: z.array(z.string().regex(/^<[^<>\s\r\n]{1,490}>$/)).max(50).optional(),
       attachments: z.array(z.object({
         filename: z.string().trim().min(1).max(255),
         content: z.string().min(1).max(40_000_000),
@@ -129,7 +152,8 @@ export const SmtpSendSchema = z
   })
   .refine((data) => Boolean(data.config || data.smtp), {
     message: 'SMTP sunucu ayarları (config veya smtp) zorunludur.',
-  });
+  }).refine(data=>!data.sentConfig || (data.sentConfig.accountEmail.trim().toLowerCase()===data.sentConfig.auth.user.trim().toLowerCase() &&
+    data.sentConfig.accountEmail.trim().toLowerCase()===(data.config || data.smtp)?.auth.user.trim().toLowerCase()),{message:'SENT_ACCOUNT_MISMATCH'});
 
 // Microsoft OAuth schemas
 export const MicrosoftAuthUrlSchema = z.object({
@@ -140,7 +164,7 @@ export const MicrosoftAuthUrlSchema = z.object({
 export const MicrosoftCallbackSchema = z.object({
   code: z.string().min(1, 'Yetkilendirme kodu (code) zorunludur.'),
   redirectUri: z.string().min(1, 'redirectUri zorunludur.'),
-  state: z.string().optional(),
+  state: z.string().min(1).max(200),
   codeVerifier: z.string().optional(),
   customClientId: z.string().trim().max(200).optional(),
 });

@@ -14,6 +14,8 @@ export interface MailboxFolder {
   unreadMessages?: number;
   uidValidity?: string;
   highestUid?: number;
+  /** Last delivered UID, not the server UIDNEXT watermark. */
+  syncCursor?: number;
 }
 
 export interface OrderShippingInfo {
@@ -39,6 +41,7 @@ export interface ConnectedAccount {
   unreadCount?: number;
   mailboxes?: MailboxFolder[];
   imapConfig?: {
+    oauthProvider?: 'google' | 'microsoft';
     host: string;
     port: number;
     secure: boolean;
@@ -67,6 +70,8 @@ export interface AutoRule {
   matchCount: number;
   createdAt: string;
   description?: string;
+  accountIds?: string[];
+  folderTypes?: FolderType[];
 }
 
 export interface EmailAnalysis {
@@ -110,6 +115,13 @@ export interface EmailMessage {
   fromName?: string;
   fromEmail?: string;
   to?: string[];
+  cc?: string[];
+  replyTo?: string[];
+  inReplyTo?: string;
+  references?: string[];
+  providerLabels?: string[];
+  pendingSent?: boolean;
+  pendingMove?: boolean;
   subject: string;
   date: string;
   snippet: string;

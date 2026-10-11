@@ -43,7 +43,7 @@ export async function setupTelegramBot(token: string, ownerChatId: string): Prom
       }
 
       if (fromId !== String(authorizedId)) {
-        console.warn(`[Sift Telegram Security] Yetkisiz erişim denemesi: ID ${fromId} (${ctx.from?.username || 'isimsiz'})`);
+        console.warn('[Sift Telegram] UNAUTHORIZED_ACCESS');
         await ctx.reply('⛔ Yetkisiz Erişim: Bu Sift gelen kutusu botu yalnızca sahibine özel olarak şifrelenmiştir.');
         return;
       }
@@ -84,8 +84,8 @@ export async function setupTelegramBot(token: string, ownerChatId: string): Prom
         const resultMessage = await processTelegramNaturalLanguageCommand(text);
         await ctx.reply(resultMessage, { parse_mode: 'Markdown' });
       } catch (err: any) {
-        console.error('Telegram NLP hata:', err);
-        await ctx.reply(`⚠️ Komut işlenirken hata oluştu: ${err.message || 'Bilinmeyen hata'}`);
+        console.error('[Sift Telegram] COMMAND_FAILED');
+        await ctx.reply('⚠️ Komut işlenemedi. Yeniden deneyin.');
       }
     });
 
@@ -96,15 +96,15 @@ export async function setupTelegramBot(token: string, ownerChatId: string): Prom
         console.log('[Sift Telegram] Bot başarıyla başlatıldı ve dinlemeye alındı.');
       })
       .catch((err) => {
-        console.error('[Sift Telegram] Bot başlatma hatası:', err.message);
+        console.error('[Sift Telegram] START_FAILED');
         isBotRunning = false;
       });
 
     botInstance = bot;
     return { success: true, message: 'Telegram bot başarıyla başlatıldı.' };
   } catch (err: any) {
-    console.error('Telegram bot kurulum hatası:', err);
-    return { success: false, message: err.message || 'Telegram bot kurulumu başarısız.' };
+    console.error('[Sift Telegram] SETUP_FAILED');
+    return { success: false, message: 'Telegram bot kurulumu başarısız.' };
   }
 }
 

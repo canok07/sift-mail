@@ -38,6 +38,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
   const [label, setLabel] = useState('');
   const [category, setCategory] = useState<'imap_password' | 'gemini_api_key' | 'smtp_password'>('imap_password');
   const [secretValue, setSecretValue] = useState('');
+  const [accountEmail, setAccountEmail] = useState('');
   const [showSecret, setShowSecret] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -78,6 +79,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
           label: label.trim() || key.trim(),
           category,
           value: secretValue.trim(),
+          accountEmail: category === 'gemini_api_key' ? undefined : accountEmail.trim().toLowerCase(),
         }),
       });
 
@@ -85,6 +87,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
       setKey('');
       setLabel('');
       setSecretValue('');
+      setAccountEmail('');
       await fetchVault();
       setTimeout(() => setSuccessMsg(null), 3000);
     } catch (err: any) {
@@ -101,7 +104,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
       });
       await fetchVault();
     } catch (err) {
-      console.warn('Silinemedi:', err);
+      setError('Kasa kaydı silinemedi. Yeniden deneyin.');
     }
   };
 
@@ -268,6 +271,12 @@ export const VaultModal: React.FC<VaultModalProps> = ({
               </div>
             </div>
 
+            {category !== 'gemini_api_key' && <div>
+              <label className="block text-[11px] font-semibold opacity-75 mb-1">Parolanın ait olduğu e-posta hesabı</label>
+              <input type="email" required value={accountEmail} onChange={event => setAccountEmail(event.target.value)}
+                placeholder="hesap@example.com" className={`w-full text-xs px-3 py-2 rounded-lg border outline-hidden ${inputBg}`} />
+              <p className="text-[11px] opacity-60 mt-1">Hesap kaldırıldığında bu parola da kasadan silinir.</p>
+            </div>}
             <div>
               <label className="block text-[11px] font-semibold opacity-75 mb-1">
                 Kasa Anahtarı (ID)

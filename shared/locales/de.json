@@ -1,4 +1,53 @@
 {
+  "folders": {"inbox":"Posteingang","spam":"Spam","sent":"Gesendet","drafts":"Entwürfe","archive":"Archiv","trash":"Papierkorb","other":"Andere"},
+  "workflow": {
+        "syncProviderLabels": "Kategorie-Labels beim Anbieter anwenden",
+        "noLabelTargets": "Keine geeigneten kategorisierten Nachrichten in dieser Ansicht.",
+        "labelBatch": "{{completed}} Anbieter-Label-Änderungen bestätigt; {{remaining}} verbleiben. Nicht unterstützte Server oder geänderte Nachrichten stoppen den Vorgang.",
+        "rules": "Mail-Regeln",
+        "allFolders": "Alle Ordner",
+        "sentCopyFailed": "Nachricht wurde zugestellt, aber die Anbieter-Kopie in Gesendet wurde nicht bestätigt. Nicht erneut senden; prüfen Sie Gesendet beim Anbieter.",
+        "draftOriginalPreserved": "Anbieter-Entwürfe werden nicht gelöscht oder ersetzt.",
+        "searchScope": "Die Suche umfasst lokal synchronisierte Nachrichten, nicht noch nicht synchronisierte Anbieter-Historie.",
+    "replyAll": "Allen antworten",
+    "partialSend": "Einige Empfänger wurden abgelehnt. Bereits belieferte Empfänger werden nicht erneut angeschrieben. Nur abgelehnte Empfänger bleiben im Entwurf.",
+    "saveProviderCopy": "Kopie in Anbieter-Entwürfen speichern",
+    "draftCopyHint": "Erstellt eine neue Kopie; vorhandene Anbieter-Entwürfe werden weder ersetzt noch gelöscht.",
+    "draftSaved": "Entwurfskopie beim Anbieter gespeichert. Vorhandene Kopien bleiben erhalten.",
+    "draftFailed": "Speicherung nicht bestätigt. Prüfen Sie Anbieter-Entwürfe vor einem neuen Versuch.",
+    "continueDraft": "Entwurf fortsetzen (Original bleibt erhalten)",
+    "thread": "Unterhaltung",
+    "providerLabels": "Anbieter-Labels / Schlüsselwörter",
+    "addProviderLabel": "Anbieter-Label hinzufügen",
+    "removeProviderLabel": "Anbieter-Label entfernen",
+    "labelPreview": "Anbieter-Labels auf {{count}} lokale Nachrichten im aktuellen Konto/Ordner anwenden? Lokale Labels bleiben erhalten.",
+    "labelConfirm": "Labels anwenden",
+    "searchHint": "Alle lokal synchronisierten Inhalte dieser Ansicht durchsuchen.",
+    "allAccounts": "Alle Konten",
+    "ruleAccount": "Kontobereich",
+    "ruleFolder": "Ordnerbereich",
+    "legacyScope": "Alte Regel: alle Konten / Ordner",
+    "inboxScope": "Nur Posteingang",
+    "unsubscribePreview": "Abmeldeseiten für {{count}} ausgewählte Nachrichten öffnen? Dies bestätigt keine Abmeldung.",
+    "providerLabelHint": "Anbieter-Labels und lokale Labels sind getrennt. IMAP-Schlüsselwörter benötigen Serverunterstützung."
+},
+  "sync": {
+    "newMessages": "neue Nachrichten",
+    "reauthRequired": "Die Kontoautorisierung ist abgelaufen. Verbinden Sie das Konto erneut; gespeicherte Nachrichten bleiben erhalten."
+  },
+  "oauth": {
+    "browser": "Die Anmeldung wurde im Browser geöffnet. Autorisieren Sie den Zugriff und kehren Sie zu Sift zurück.",
+    "failed": "Die Kontoanmeldung konnte nicht abgeschlossen werden.",
+    "saved": "Die App-Registrierung wurde sicher gespeichert. Sie können sich beim Anbieter anmelden.",
+    "configure": "OAuth-App-Registrierung",
+    "cancel": "Anmeldung abbrechen",
+    "setupHelp": "Google Desktop- oder Microsoft Public-Client-Registrierung verwenden. Anleitung: docs/oauth-desktop.md. IMAP/SMTP-Berechtigung erforderlich; dies ist kein API-Schlüsselfeld.",
+    "provider": "OAuth-Anbieter",
+    "secret": "Google Client Secret (optional)",
+    "save": "Sicher speichern",
+    "manualHelp": "Manuell mit IMAP/SMTP-App-Passwort verbinden.",
+    "reconnect": "Erneut verbinden"
+  },
   "ui": {
     "settings": {
       "searchPlaceholder": "Einstellungen durchsuchen",
@@ -158,6 +207,7 @@
     "noSenderHistory": "In diesem Konto wurde kein passender Absenderverlauf gefunden.",
     "senderPreview": "{{count}} geladene Nachrichten von {{sender}} im Konto {{account}} in den Papierkorb verschieben. Andere Konten, Absender und gesendete Nachrichten bleiben unverändert. Die Abmeldeseite wird ebenfalls geöffnet."
   },
+  "localData": {"title":"Lokale Daten","description":"Nachrichten, Entwürfe, Labels, Regeln und Synchronisationsstände werden auf diesem Gerät verschlüsselt gespeichert.","password":"Backup-Passwort","passwordHint":"Mindestens 12 Zeichen. Dieses Passwort wird nicht gespeichert; ohne Passwort ist das Backup nicht lesbar.","export":"Verschlüsseltes Backup herunterladen","file":"Backup-Datei","restoreHint":"Die Wiederherstellung ersetzt lokale Maildaten und Kontoeinstellungen. Erneute Anmeldung erforderlich; Nachrichten beim Anbieter und Zugangsdaten bleiben unverändert.","restore":"Backup wiederherstellen","confirm":"Lokale Maildaten und Kontoeinstellungen dieses Geräts durch dieses Backup ersetzen? Ohne weiteres Backup ist dies nicht rückgängig zu machen.","exported":"Verschlüsseltes Backup heruntergeladen.","failed":"Backup fehlgeschlagen. Datei und Passwort prüfen; vorhandene Daten bleiben erhalten.","busy":"Wird verarbeitet…"},
   "toast": {
     "markedSafe": "E-Mail als sicher bestätigt und archiviert.",
     "unsubStarted": "Abmeldevorgang gestartet.",

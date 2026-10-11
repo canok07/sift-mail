@@ -22,18 +22,19 @@ export function selectSenderHistory<T extends MailIdentity>(anchor: T, messages:
 }
 
 /** Stop at the first failure; report only actions actually completed remotely. */
-export async function executeConfirmedMailBatch<T extends { id: string }>(
+export async function executeConfirmedMailBatch<T extends { id: string;accountId?:string }>(
   messages: readonly T[],
   perform: (mail: T) => Promise<unknown>,
   onCompleted: (mail: T) => void,
 ): Promise<{ completed: string[]; remaining: string[] }> {
-  const unique = [...new Map(messages.map(mail => [mail.id, mail])).values()];
+  const unique = [...new Map(messages.map(mail => [JSON.stringify([mail.accountId,mail.id]), mail])).values()];
   const completed: string[] = [];
   for (let index = 0; index < unique.length; index++) {
     try { await perform(unique[index]); }
     catch { return { completed, remaining: unique.slice(index).map(mail => mail.id) }; }
     completed.push(unique[index].id);
-    onCompleted(unique[index]);
+    try{onCompleted(unique[index]);}
+    catch{return {completed,remaining:unique.slice(index+1).map(mail=>mail.id)};}
   }
   return { completed, remaining: [] };
 }

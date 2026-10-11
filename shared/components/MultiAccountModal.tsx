@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   X,
   Mail,
@@ -25,6 +26,7 @@ import {
 } from '../../core/mail/providerManager';
 import { DynamicSyncCredentials } from '../services/mailSyncService';
 import { safeFetchJson, extractErrorMessage } from '../services/apiClient';
+import { loginWithProvider, reconnectAccount, type OAuthProvider } from '../services/accountService';
 
 interface MultiAccountModalProps {
   isOpen: boolean;
@@ -49,6 +51,7 @@ export const MultiAccountModal: React.FC<MultiAccountModalProps> = ({
   onLoginGmail,
   theme = 'light',
 }) => {
+  const { t } = useTranslation();
   const [emailInput, setEmailInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -77,17 +80,38 @@ export const MultiAccountModal: React.FC<MultiAccountModalProps> = ({
   // Testing & Connecting states
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
-
-  const startMicrosoftOAuth = async () => {
+  const oauthAbort = useRef<AbortController | null>(null);
+  const [configProvider, setConfigProvider] = useState<OAuthProvider>('google');
+  const [showOAuthConfig, setShowOAuthConfig] = useState(false);
+  const [oauthClientId, setOAuthClientId] = useState('');
+  const [oauthClientSecret, setOAuthClientSecret] = useState('');
+  const startOAuth = async (provider: OAuthProvider) => {
+    if (isSubmitting) return;
+    oauthAbort.current?.abort();
+    const controller = new AbortController(); oauthAbort.current = controller;
     setTestResult(null);
+    setIsSubmitting(true);
     try {
-      const redirectUri = `${window.location.origin}/oauth/microsoft/callback`;
-      const data = await safeFetchJson<{authUrl?:string;url?:string}>(`/api/oauth/microsoft/auth-url?redirectUri=${encodeURIComponent(redirectUri)}`);
-      const url = data.authUrl || data.url;
-      if (!url) throw new Error('Microsoft OAuth adresi alınamadı. MICROSOFT_CLIENT_ID ayarını kontrol edin.');
-      window.open(url, '_blank', 'noopener,noreferrer');
-      setTestResult({success:true,message:'Microsoft giriş sayfası açıldı. Yetkilendirmeyi tarayıcıda tamamlayın.'});
-    } catch (error) { setTestResult({success:false,message:extractErrorMessage(error,'Microsoft OAuth başlatılamadı.')}); }
+      const credentials = await loginWithProvider(provider, controller.signal, url => {
+        window.open(url, '_blank', 'noopener,noreferrer');
+        setTestResult({ success: true, message: t('oauth.browser') });
+      });
+      controller.signal.throwIfAborted();
+      await onConnect(credentials);
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        setTestResult({ success: false, message: extractErrorMessage(error, t('oauth.failed')) });
+        setConfigProvider(provider); setShowOAuthConfig(true);
+      }
+    } finally { if (oauthAbort.current === controller) { oauthAbort.current = null; setIsSubmitting(false); } }
+  };
+  const saveOAuthConfig = async () => {
+    try {
+      await safeFetchJson('/api/oauth/config', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: configProvider, clientId: oauthClientId, ...(configProvider === 'google' ? { clientSecret: oauthClientSecret } : {}) }) });
+      setOAuthClientId(''); setOAuthClientSecret(''); setShowOAuthConfig(false);
+      setTestResult({ success: true, message: t('oauth.saved') });
+    } catch (error) { setTestResult({ success: false, message: extractErrorMessage(error, t('oauth.failed')) }); }
   };
 
   // Update server fields when auto-discovery changes
@@ -107,23 +131,9 @@ export const MultiAccountModal: React.FC<MultiAccountModalProps> = ({
   }, [accounts, discovered, emailInput]);
 
   useEffect(() => {
-    if (!isOpen) return;
-    const channel = new BroadcastChannel('sift-microsoft-oauth');
-    const receiveOAuth = async (data: any) => {
-      if (data?.type !== 'MS_OAUTH_CALLBACK') return;
-      if (data.error) { setTestResult({success:false,message:data.errorDescription || data.error}); return; }
-      setIsSubmitting(true);
-      try {
-        const result = await safeFetchJson<any>('/api/oauth/microsoft/callback', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:data.code,state:data.state,redirectUri:`${window.location.origin}/oauth/microsoft/callback`})});
-        if (!result.success || !result.accessToken) throw new Error(result.error || 'Microsoft OAuth tamamlanamadı.');
-        await onConnect({email:result.email,password:'',accessToken:result.accessToken,accessTokenExpiresAt:Date.now()+(result.expiresIn || 3600)*1000,host:'outlook.office365.com',port:993,secure:true});
-        setTestResult({success:true,message:'Microsoft hesabı bağlandı; senkronizasyon arka planda başladı.'});
-      } catch(error) { setTestResult({success:false,message:extractErrorMessage(error,'Microsoft hesabı bağlanamadı.')}); }
-      finally { setIsSubmitting(false); }
-    };
-    channel.onmessage = (event) => { void receiveOAuth(event.data); };
-    return () => channel.close();
-  }, [isOpen,onConnect]);
+    if (!isOpen) { setOAuthClientSecret(''); setIsSubmitting(false); }
+    return () => { oauthAbort.current?.abort(); };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -178,28 +188,27 @@ export const MultiAccountModal: React.FC<MultiAccountModalProps> = ({
               key: `imap_${email.replace(/[^a-zA-Z0-9_]/g, '_')}`,
               label: `${displayNameInput.trim() || discovered.providerName} (${email})`,
               category: 'imap_password',
+              accountEmail: email.trim().toLowerCase(),
               value: passwordInput.trim(),
             }),
           });
         } catch (vaultErr) {
-          console.warn('Kasaya kaydedilirken uyarı:', vaultErr);
+          console.warn('[Sift Mail] ACCOUNT_VAULT_SAVE_FAILED');
         }
       }
 
       // Reset and close
-      setTimeout(() => {
-        setEmailInput('');
-        setPasswordInput('');
-        setDisplayNameInput('');
-        setTestResult(null);
-        onClose();
-      }, 500);
+      setEmailInput('');
+      setPasswordInput('');
+      setDisplayNameInput('');
+      setTestResult(null);
+      onClose();
     } catch (error: any) {
-      console.error("Auth error details:", error);
+      console.error('[Sift Mail] ACCOUNT_LOGIN_FAILED');
       const errorMessage =
         typeof error === 'string'
           ? error
-          : (error as any)?.message || (error as any)?.error || JSON.stringify(error);
+          : (error as any)?.message || 'Hesap bağlantısı kurulamadı.';
       setTestResult({
         success: false,
         message: errorMessage || 'Sunucuya bağlanılamadı. Lütfen bilgilerinizi kontrol edin.',
@@ -254,11 +263,22 @@ export const MultiAccountModal: React.FC<MultiAccountModalProps> = ({
           <div>
             <p className="text-[10px] uppercase tracking-widest opacity-50 mb-2">Sağlayıcıyla giriş</p>
             <div className="grid grid-cols-2 gap-2">
-              <button type="button" onClick={onLoginGmail} className="p-3 rounded-xl bg-zinc-500/10 hover:bg-zinc-500/15 text-xs font-bold">Google / Gmail</button>
-              <button type="button" onClick={startMicrosoftOAuth} className="p-3 rounded-xl bg-sky-500/10 hover:bg-sky-500/15 text-xs font-bold text-sky-500">Microsoft / Outlook</button>
+              <button type="button" disabled={isSubmitting} onClick={() => void startOAuth('google')} className="p-3 rounded-xl bg-zinc-500/10 hover:bg-zinc-500/15 text-xs font-bold disabled:opacity-50">Google / Gmail</button>
+              <button type="button" disabled={isSubmitting} onClick={() => void startOAuth('microsoft')} className="p-3 rounded-xl bg-sky-500/10 hover:bg-sky-500/15 text-xs font-bold text-sky-500 disabled:opacity-50">Microsoft / Outlook</button>
               <button type="button" onClick={()=>{setEmailInput('@yandex.com');setTestResult({success:true,message:'Yandex OAuth yapılandırılmadıysa uygulama parolasıyla güvenli IMAP kurulumu kullanılır.'})}} className="p-3 rounded-xl bg-red-500/10 hover:bg-red-500/15 text-xs font-bold text-red-500">Yandex</button>
               <button type="button" onClick={()=>{setEmailInput('@icloud.com');setTestResult({success:true,message:'Apple Mail, Apple hesabınızdan oluşturacağınız uygulamaya özel parola ile bağlanır.'})}} className="p-3 rounded-xl bg-zinc-500/10 hover:bg-zinc-500/15 text-xs font-bold">Apple Mail</button>
             </div>
+            <button type="button" disabled={isSubmitting} onClick={() => setShowOAuthConfig(value => !value)} className="mt-3 text-xs underline">{t('oauth.configure')}</button>
+            {isSubmitting && oauthAbort.current && <button type="button" onClick={() => oauthAbort.current?.abort()} className="ml-3 text-xs underline">{t('oauth.cancel')}</button>}
+            {showOAuthConfig && <div data-testid="oauth-config" className="mt-3 space-y-3 rounded-xl border border-zinc-500/20 p-3">
+              <p className="text-xs opacity-70">{t('oauth.setupHelp')}</p>
+              <select aria-label={t('oauth.provider')} value={configProvider} onChange={event => { setConfigProvider(event.target.value as OAuthProvider); setOAuthClientId(''); setOAuthClientSecret(''); }} className="w-full rounded-lg bg-zinc-500/10 p-2 text-xs">
+                <option value="google">Google Desktop</option><option value="microsoft">Microsoft Public client</option>
+              </select>
+              <input aria-label="OAuth Client ID" placeholder="OAuth Client ID" value={oauthClientId} onChange={event => setOAuthClientId(event.target.value)} className="w-full rounded-lg bg-zinc-500/10 p-2 text-xs" />
+              {configProvider === 'google' && <input type="password" autoComplete="off" aria-label={t('oauth.secret')} placeholder={t('oauth.secret')} value={oauthClientSecret} onChange={event => setOAuthClientSecret(event.target.value)} className="w-full rounded-lg bg-zinc-500/10 p-2 text-xs" />}
+              <button type="button" onClick={() => void saveOAuthConfig()} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs text-white">{t('oauth.save')}</button>
+            </div>}
           </div>
           {/* Hızlı Oturum Açma / Eşitleme Seçeneği */}
           {onLoginGmail && (
@@ -267,7 +287,7 @@ export const MultiAccountModal: React.FC<MultiAccountModalProps> = ({
                 <Sparkles className="w-4 h-4 text-emerald-500 shrink-0" />
                 <div className="text-xs">
                   <span className="font-bold text-zinc-900 dark:text-zinc-100">Tek Seferlik Hızlı Giriş</span>
-                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400">Şifreniz cihazınızdan çıkmadan anlık IMAP oturumu açın</p>
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400">{t('oauth.manualHelp')}</p>
                 </div>
               </div>
               <button
@@ -527,6 +547,7 @@ export const MultiAccountModal: React.FC<MultiAccountModalProps> = ({
                     return (
                       <div
                         key={acc.id}
+                        data-testid="connected-account"
                         className={`p-3 rounded-2xl flex items-center justify-between gap-3 ${
                           isSelected
                             ? 'bg-emerald-500/10 ring-1 ring-emerald-500/30'
@@ -549,6 +570,12 @@ export const MultiAccountModal: React.FC<MultiAccountModalProps> = ({
                         </div>
 
                         <div className="flex items-center gap-2 shrink-0">
+                          {acc.imapConfig?.oauthProvider && <button type="button" disabled={isSubmitting} onClick={async () => {
+                            setIsSubmitting(true);
+                            try { await onConnect(await reconnectAccount(acc)); }
+                            catch (error) { setTestResult({ success: false, message: extractErrorMessage(error, t('oauth.failed')) }); }
+                            finally { setIsSubmitting(false); }
+                          }} className="text-xs underline">{t('oauth.reconnect')}</button>}
                           <button
                             type="button"
                             onClick={() => {

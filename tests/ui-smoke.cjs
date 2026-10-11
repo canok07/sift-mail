@@ -2,8 +2,10 @@ const {chromium,expect}=require('@playwright/test');
 const {fork}=require('node:child_process');
 const path=require('node:path');
 const fs=require('node:fs');
+const os=require('node:os');
 (async()=>{
- const child=fork('dist/server.cjs',[],{env:{...process.env,NODE_ENV:'production',PORT:'47835',HOST:'127.0.0.1',SIFT_DATA_DIR:path.resolve('.test-data')},stdio:['ignore','ignore','pipe','ipc']});
+ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'sift-ui-test-'));
+ const child=fork('dist/server.cjs',[],{env:{...process.env,NODE_ENV:'production',PORT:'47835',HOST:'127.0.0.1',SIFT_DATA_DIR:directory},stdio:['ignore','ignore','pipe','ipc']});
  let browser, page;
  try {
   await new Promise((resolve,reject)=>{const t=setTimeout(()=>reject(new Error('server timeout')),20000);child.on('message',m=>{if(m.type==='sift-ready'){clearTimeout(t);resolve();}});child.on('error',reject);});
@@ -28,7 +30,7 @@ const fs=require('node:fs');
    await route.fulfill({json:{success:true,plugin:result}});
   });
   await page.route('**/api/smtp/send',async route=>{sentPayload=route.request().postDataJSON();await route.fulfill({json:{success:true,messageId:'fixture-message'}})});
-  await page.route('**/api/imap/action',async route=>{markReadPayload=route.request().postDataJSON();await route.fulfill({json:{success:true,verified:true}})});
+  await page.route('**/api/imap/action',async route=>{markReadPayload=route.request().postDataJSON();assertFixture(markReadPayload.expectedUidValidity==='123'&&markReadPayload.accountEmail==='fixture@gmail.com','Mail action must include account and mailbox generation');await route.fulfill({json:{success:true,verified:true}})});
   await page.route('**/api/imap/attachment',async route=>route.fulfill({json:{success:true,filename:'fixture.txt',contentType:'text/plain',content:Buffer.from('attachment fixture').toString('base64')}}));
   const rawMessage=Buffer.from('From: sender@example.com\r\nTo: fixture@gmail.com\r\nSubject: Fixture spam\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nOriginal fixture message\r\n');
   await page.route('**/api/imap/raw-message',async route=>{
@@ -141,6 +143,6 @@ const fs=require('node:fs');
   if(errors.length)throw new Error(errors.join('\n'));
   console.log('UI PASS: complete styling, five accessible theme palettes, folder isolation, pagination, MIME sandbox, compose, AI gate, labels, settings and language.');
  } catch(error) { if(page) { console.error((await page.locator('body').innerText()).slice(0,5000)); fs.mkdirSync('test-results',{recursive:true}); await page.screenshot({path:'test-results/failure.png'}); } throw error; }
- finally {if(browser)await browser.close();child.kill();}
+ finally {if(browser)await browser.close();if(child.exitCode===null){const exited=new Promise(resolve=>child.once('exit',resolve));child.kill();await exited;}fs.rmSync(directory,{recursive:true,force:true});}
 })().catch(e=>{console.error(e);process.exitCode=1;});
 function assertFixture(condition,message){if(!condition)throw new Error(message);}

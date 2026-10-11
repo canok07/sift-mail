@@ -28,6 +28,10 @@ interface EmailDetailModalProps {
   onMarkSafe: (email: EmailMessage) => void;
   onReply?: (email: EmailMessage) => void;
   onForward?: (email: EmailMessage) => void;
+  threadMessages?: EmailMessage[];
+  onSelectThread?: (email:EmailMessage)=>void;
+  onContinueDraft?: (email:EmailMessage)=>void;
+  onProviderLabel?: (email:EmailMessage,label:string,remove:boolean)=>void;
   onUpdateCategory?: (emailId: string, category: SafeCategory) => void;
   onAddRule?: (rule: Omit<AutoRule, 'id' | 'createdAt' | 'matchCount'>) => void;
   onUnsubscribeAndPurge?: (email: EmailMessage) => void;
@@ -47,6 +51,7 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
   onMarkSafe,
   onReply,
   onForward,
+  threadMessages=[],onSelectThread,onContinueDraft,onProviderLabel,
   onUpdateCategory,
   onAddRule,
   onUnsubscribeAndPurge,
@@ -58,6 +63,7 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
 }) => {
   const { t, i18n } = useTranslation();
   const [ruleCreated, setRuleCreated] = useState(false);
+  const [providerLabel,setProviderLabel]=useState('');
 
   useEffect(() => {
     if (!email) return;
@@ -248,6 +254,14 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
             </div>
           )}
 
+          {email.folderType==='drafts' && onContinueDraft && <button onClick={()=>onContinueDraft(email)} className="btn-primary">{t('workflow.continueDraft')}</button>}
+          {threadMessages.length>1 && <details className="rounded-xl border theme-border p-3"><summary className="cursor-pointer text-sm">{t('workflow.thread')} ({threadMessages.length})</summary>
+            {threadMessages.map(item=><button key={item.id} onClick={()=>onSelectThread?.(item)} className="block w-full text-left theme-hover p-2 text-xs"><span className="font-semibold">{item.from}</span> · {item.subject} · {new Date(item.date).toLocaleString(i18n.language)}</button>)}</details>}
+          <div className="text-xs space-y-2"><h3 className="font-semibold">{t('workflow.providerLabels')}</h3>
+            <p className="opacity-60">{t('workflow.providerLabelHint')}</p>
+            <div className="flex gap-2 flex-wrap">{(email.providerLabels || []).map(label=><span key={label} className="rounded-lg theme-elevated p-2">{label}{onProviderLabel && <button title={t('workflow.removeProviderLabel')} onClick={()=>onProviderLabel(email,label,true)} className="ml-2">×</button>}</span>)}</div>
+            {onProviderLabel && <div className="flex gap-2"><input aria-label={t('workflow.addProviderLabel')} value={providerLabel} maxLength={200} onChange={event=>setProviderLabel(event.target.value)} className="min-w-0 flex-1"/><button disabled={!providerLabel.trim()} className="btn" onClick={()=>{onProviderLabel(email,providerLabel.trim(),false);setProviderLabel('');}}>{t('workflow.addProviderLabel')}</button></div>}
+          </div>
           {/* Anti-Tracker Shield & Email Body */}
           <div>
             <h3 className="text-xs font-bold uppercase tracking-wider opacity-60 mb-2.5">

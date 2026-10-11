@@ -1,4 +1,53 @@
 {
+  "folders": {"inbox":"Inbox","spam":"Spam","sent":"Sent","drafts":"Drafts","archive":"Archive","trash":"Trash","other":"Other"},
+  "workflow": {
+        "syncProviderLabels": "Apply category labels to provider",
+        "noLabelTargets": "No eligible categorized mail in this view.",
+        "labelBatch": "{{completed}} provider label updates confirmed; {{remaining}} remain. Unsupported servers or changed messages stop the batch.",
+        "rules": "Mail rules",
+        "allFolders": "All folders",
+        "sentCopyFailed": "Message was delivered, but the provider Sent copy could not be confirmed. Do not resend; check the provider Sent folder.",
+        "draftOriginalPreserved": "No provider draft will be deleted or replaced.",
+        "searchScope": "Search covers locally synchronized mail, not unsynchronized provider history.",
+    "replyAll": "Reply all",
+    "partialSend": "Some recipients were rejected. Delivered recipients will not be resent. Only rejected recipients remain in this draft.",
+    "saveProviderCopy": "Save a copy to provider Drafts",
+    "draftCopyHint": "Creates a new copy; existing provider drafts are not overwritten or deleted.",
+    "draftSaved": "Draft copy saved to provider. Existing copies were preserved.",
+    "draftFailed": "Draft save was not confirmed. Check provider Drafts before trying again.",
+    "continueDraft": "Continue draft (original is preserved)",
+    "thread": "Thread",
+    "providerLabels": "Provider labels / keywords",
+    "addProviderLabel": "Add provider label",
+    "removeProviderLabel": "Remove provider label",
+    "labelPreview": "Apply provider labels to {{count}} cached messages in the current account/folder? Local labels are preserved.",
+    "labelConfirm": "Apply labels",
+    "searchHint": "Search all locally synchronized content in this view.",
+    "allAccounts": "All accounts",
+    "ruleAccount": "Account scope",
+    "ruleFolder": "Folder scope",
+    "legacyScope": "Legacy rule: all accounts / folders",
+    "inboxScope": "Inbox only",
+    "unsubscribePreview": "Open unsubscribe pages for {{count}} selected messages? This does not verify cancellation.",
+    "providerLabelHint": "Provider labels are separate from local labels. Standard IMAP keywords require server support."
+},
+  "sync": {
+    "newMessages": "new messages",
+    "reauthRequired": "Account authorization expired. Reconnect the account; your cached mail is preserved."
+  },
+  "oauth": {
+    "browser": "Sign-in opened in your browser. Complete authorization and return to Sift.",
+    "failed": "Account sign-in could not be completed.",
+    "saved": "Application registration saved securely. You can sign in with the provider.",
+    "configure": "OAuth application registration",
+    "cancel": "Cancel sign-in",
+    "setupHelp": "Use a Google Desktop or Microsoft Public client registration. Setup: docs/oauth-desktop.md. IMAP/SMTP permission is required; this is not an API key field.",
+    "provider": "OAuth provider",
+    "secret": "Google client secret (optional)",
+    "save": "Save securely",
+    "manualHelp": "Connect manually using an IMAP/SMTP app password.",
+    "reconnect": "Reconnect"
+  },
   "ui": {
     "settings": {
       "searchPlaceholder": "Search settings",
@@ -158,6 +207,7 @@
     "noSenderHistory": "No eligible sender history was found in this account.",
     "senderPreview": "Move {{count}} loaded messages from {{sender}} in account {{account}} to trash. Other accounts, senders and sent messages are not affected. The unsubscribe page will also open."
   },
+  "localData": {"title":"Local data","description":"Messages, drafts, labels, rules and sync checkpoints are stored encrypted on this device.","password":"Backup password","passwordHint":"Use at least 12 characters. This password is not saved; losing it makes the backup unreadable.","export":"Download encrypted backup","file":"Backup file","restoreHint":"Restoring replaces local mail data and account configuration. You must sign in again; provider mail and credentials are not changed.","restore":"Restore backup","confirm":"Replace this device's local mail data and account configuration with this backup? This cannot be undone without another backup.","exported":"Encrypted backup downloaded.","failed":"Backup operation failed. Check the file and password; existing data is preserved.","busy":"Working…"},
   "toast": {
     "markedSafe": "Email marked as safe and archived.",
     "unsubStarted": "Unsubscribe process started.",

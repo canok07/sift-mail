@@ -2,167 +2,135 @@
 
 ## English
 
-Sift Mail is a privacy-focused, multi-account email client for Gmail, Outlook, Apple Mail, Yandex, and standard IMAP/SMTP providers. Core mail features work without AI; optional AI providers can assist with summaries, classification, and reply drafts.
+Sift Mail is a multi-account email client with optional AI assistance. Accounts, sync, folders, search, labels, compose, attachments and reply/forward work independently of AI. Windows desktop is the current priority.
 
-Current version: **0.7.4**. See the [changelog](CHANGELOG.md).
+Version: **0.7.4** · [Changelog](CHANGELOG.md)
 
-### Download
+### Download and status
 
-[Download Sift Mail 0.7.4 for Windows](https://github.com/canok07/sift-mail/releases/download/v0.7.4/Sift-Mail-Setup-0.7.4.exe) · [Release notes and SHA-256 checksum](https://github.com/canok07/sift-mail/releases/tag/v0.7.4)
+[Published Windows installer](https://github.com/canok07/sift-mail/releases/download/v0.7.4/Sift-Mail-Setup-0.7.4.exe) · [Release notes and checksum](https://github.com/canok07/sift-mail/releases/tag/v0.7.4)
 
-The Windows installer is not code-signed; Windows SmartScreen may show an unknown-publisher warning. macOS, Linux, Android and iOS source projects are available, but this release publishes only a Windows installer.
-
-### What's new in 0.7.4
-
-- Unified optional AI connections and privacy controls; testing a new key does not save it or enable the assistant.
-- Safer mail-action confirmations and recovery when the local server restarts.
-- Rich-text compose, restored minimized drafts, and original-message `.eml` attachments.
-- Encrypted local mail/draft storage, Windows-protected vault keys, and incremental folder synchronization.
+The `main` branch contains newer desktop changes than that installer. This source update does not replace the release asset. Installers are unsigned; Windows SmartScreen may show an unknown-publisher warning.
 
 ### Features
 
-- Multiple email accounts in one interface
-- Separate Inbox, Sent, and Spam folders
-- Incremental background synchronization, bounded reconnect retries, search, labels, date groups, and pagination
-- Encrypted local mail and draft cache; Windows vault keys protected with DPAPI
-- Compose, reply, forward, attachments, and recipient suggestions
-- Protected HTML email rendering with remote images and tracking pixels blocked
-- Light, Dark, OLED, Ocean, and Forest themes
-- English, Turkish, and German interface languages
-- Optional Gemini, OpenAI, Claude, and Ollama integrations
-- Optional plugin system with failure isolation and constrained permissions
+- Multiple accounts; separate Inbox, Sent, Spam, Drafts, Archive and Trash views.
+- Incremental background sync, reconnect recovery, date groups and pagination (10/20/50/100).
+- Search across synchronized local mail: body text, recipients and attachment names. Unsynchronized provider history is not searched.
+- Rich-text compose, attachments, recipient suggestions, reply-all and header-linked, account-isolated conversations.
+- Encrypted local mail/drafts and portable backups; Windows DPAPI-protected vault keys.
+- Explicit provider draft copies and continuation with original attachments. Provider draft originals are preserved.
+- Separate local/provider labels and account/folder-scoped classification rules. Provider label updates and mail actions require confirmation; completed operations are not silently retried after partial failures.
+- Sandboxed HTML mail with remote images/tracking blocked, five themes and English/Turkish/German UI.
+- Optional Gemini, OpenAI, Claude and Ollama integration infrastructure. AI is unavailable until configured and enabled; normal mail use does not depend on it.
 
-### Account setup
+Gmail labels use the advertised IMAP extension. Other providers must support writable IMAP keywords; these are not Outlook Categories. Details: [mail workflows](docs/mail-workflows.md), [background sync](docs/background-sync.md), [storage and backups](docs/local-mail-store.md).
 
-- **Gmail:** use a Google app password for IMAP/SMTP.
-- **Outlook / Hotmail:** Microsoft OAuth with PKCE is supported when `MICROSOFT_CLIENT_ID` is configured.
-- **Apple Mail:** use an Apple app-specific password.
-- **Yandex and other providers:** use an app password or manual IMAP/SMTP settings where required.
+### Account setup and privacy
 
-Passwords and API keys must never be committed to the repository. Copy [.env.example](.env.example) for local configuration. Email content is displayed in a sandboxed frame, and optional cloud AI access is disabled until explicitly configured.
+- **Gmail:** system-browser OAuth with a registered Google Desktop client, or an app password where available.
+- **Outlook/Hotmail:** system-browser OAuth with a registered Microsoft public desktop client.
+- **iCloud Mail, Yandex and standard IMAP/SMTP:** manual server settings and provider-required app passwords.
 
-### Development
+Configure OAuth registrations in the account dialog; see [desktop OAuth setup](docs/oauth-desktop.md). OAuth is fixture-tested. Live Gmail/Outlook login, delivery and folder equivalence still require registrations and interactive testing; public OAuth distribution requires applicable provider approval.
 
-Requires Node.js and npm.
+Refresh credentials and explicitly saved secrets stay in the encrypted local vault. Never commit passwords, keys, tokens or user mail data. [.env.example](.env.example) contains placeholders only. Cloud AI requires configuration and privacy permission.
+
+### Development and verification
+
+Requires **Node.js 22.13+** and npm. Run from the repository root:
 
 ```powershell
 npm ci
-npm run dev          # Web development
-npm run dev:desktop  # Desktop development
-npm run lint
-npm test
-npm run build
-```
-
-Platform builds:
-
-```powershell
+npm run dev:desktop
+npm run verify:desktop
 npm run build:win
-npm run build:mac
-npm run build:linux
-npm run build:android
-npm run build:ios
+node tests/package-smoke.cjs
 ```
 
-macOS builds require macOS/Xcode. Android builds require the Android SDK. Run `npm run build` before `npm run test:ui`; the UI test requires Chrome.
+Browser tests require Chrome. Run the package check after building on Windows; it uses an isolated profile, never installed user accounts.
 
-### Tests
+**Verified on 2026-10-11:** TypeScript, production build, 183 security/regression/folder-delta tests, and UI/OAuth-fixture/sync/reconnect/encrypted-cache flows passed on Windows and Linux. Windows NSIS packaging and the actual packaged Electron window passed. These checks do not prove live mail delivery. Live AI verification and final performance/release hardening remain separate work.
 
-`npm test` checks mail, security, AI privacy, plugins and local sessions. After building, `npm run test:ui` checks fixture-backed browser flows; `node tests/package-smoke.cjs` checks the packaged Windows backend. These checks do not prove live Gmail/Outlook access or mail delivery.
+Optional read-only provider check: `npm run test:providers:live`. Supply fresh credentials privately through the process environment; missing credentials report `BLOCKED`. It does not send, move or delete mail.
 
-Optional read-only account checks: `npm run test:providers:live`. Supply `SIFT_LIVE_EMAIL` and a fresh `SIFT_LIVE_PASSWORD` (app password) or `SIFT_LIVE_ACCESS_TOKEN` privately through the process environment. Missing credentials return `BLOCKED`. The check does not send or delete mail. Never store credentials in source or Git.
+### Structure and platforms
 
-### Project structure
+- `core/` — mail, sync, accounts/OAuth, storage, security, rules, AI and plugins.
+- `shared/` — React UI, types and shared services.
+- `apps/desktop/` — Electron desktop shell.
+- `apps/web/` — Vite web/PWA; `npm run dev:web` / `npm run build:web`.
+- `apps/mobile/` — Capacitor Android/iOS source projects.
+- `tests/` — automated and fixture-backed checks.
 
-- `core/` — mail, sync, security, rules, AI, and plugins
-- `shared/` — shared React UI, types, stores, and services
-- `apps/desktop/` — Electron desktop application
-- `apps/web/` — Vite web/PWA application
-- `apps/mobile/` — Capacitor Android and iOS projects
-- `tests/` — security, mail, plugin, UI, and package checks
+Web/mobile sources exist, but Windows checks do not establish production web authentication, mobile readiness or native macOS/iOS verification. Platform docs: [desktop](apps/desktop/README.md), [web](apps/web/README.md), [mobile](apps/mobile/README.md).
 
 ---
 
 ## Türkçe
 
-Sift Mail; Gmail, Outlook, Apple Mail, Yandex ve standart IMAP/SMTP sağlayıcılarını destekleyen, gizlilik odaklı çoklu hesap e-posta istemcisidir. Temel posta özellikleri yapay zekâ olmadan çalışır; isteğe bağlı AI sağlayıcıları özetleme, sınıflandırma ve yanıt taslağı hazırlama konularında yardımcı olabilir.
+Sift Mail, isteğe bağlı yapay zekâ desteği sunan çoklu hesap e-posta istemcisidir. Hesaplar, eşitleme, klasörler, arama, etiketler, yeni ileti, ekler ve yanıtlama/iletme AI'dan bağımsız çalışır. Güncel öncelik Windows masaüstüdür.
 
-Güncel sürüm: **0.7.4**. Ayrıntılar için [değişiklik notlarına](CHANGELOG.md) bakın.
+Sürüm: **0.7.4** · [Değişiklik notları](CHANGELOG.md)
 
-### İndir
+### İndir ve güncel durum
 
-[Windows için Sift Mail 0.7.4’ü indir](https://github.com/canok07/sift-mail/releases/download/v0.7.4/Sift-Mail-Setup-0.7.4.exe) · [Sürüm notları ve SHA-256 özeti](https://github.com/canok07/sift-mail/releases/tag/v0.7.4)
+[Yayımlanmış Windows kurucusu](https://github.com/canok07/sift-mail/releases/download/v0.7.4/Sift-Mail-Setup-0.7.4.exe) · [Sürüm notları ve dosya özeti](https://github.com/canok07/sift-mail/releases/tag/v0.7.4)
 
-Windows kurucusu kod imzalı değildir; SmartScreen bilinmeyen yayıncı uyarısı gösterebilir. macOS, Linux, Android ve iOS kaynak projeleri bulunur; bu sürümde yalnızca Windows kurucusu yayımlanır.
-
-### 0.7.4 yenilikleri
-
-- Ortak isteğe bağlı AI bağlantıları ve gizlilik denetimleri; yeni anahtarı test etmek anahtarı kaydetmez, asistanı etkinleştirmez.
-- Daha güvenli posta işlemi onayları ve yerel sunucu yeniden başladığında bağlantının toparlanması.
-- Biçimlendirilmiş yeni ileti, küçültülen taslakların geri yüklenmesi ve özgün `.eml` ileti ekleri.
-- Şifreli yerel mail/taslak saklama, Windows korumalı kasa anahtarı ve artımlı klasör eşitlemesi.
+`main` dalındaki masaüstü kaynakları bu kurucudan daha yenidir. Bu kaynak güncellemesi yayımlanmış paketi değiştirmez. Kurucular imzasızdır; SmartScreen bilinmeyen yayıncı uyarısı gösterebilir.
 
 ### Özellikler
 
-- Tek arayüzde birden fazla e-posta hesabı
-- Birbirinden ayrı Gelen, Giden ve Spam klasörleri
-- Artımlı arka plan eşitlemesi, sınırlı yeniden bağlantı denemesi, arama, etiketler, tarih grupları ve sayfalama
-- Şifreli yerel ileti/taslak önbelleği ve Windows DPAPI korumalı kasa anahtarı
-- Yeni mail, yanıtlama, iletme, dosya ekleri ve alıcı önerileri
-- Dış görselleri ve takip piksellerini engelleyen korumalı HTML görünümü
-- Açık, Koyu, OLED, Okyanus ve Orman temaları
-- Türkçe, İngilizce ve Almanca arayüz
-- İsteğe bağlı Gemini, OpenAI, Claude ve Ollama bağlantıları
-- Hataları ana uygulamadan yalıtılmış, kısıtlı yetkili isteğe bağlı eklenti sistemi
+- Ayrı Gelen, Giden, Spam, Taslaklar, Arşiv ve Çöp Kutusu görünümleriyle çoklu hesap yönetimi.
+- Artımlı arka plan eşitlemesi, yeniden bağlantı, tarih grupları ve 10/20/50/100 iletilik sayfalama.
+- Eşitlenmiş yerel maillerin gövdesinde, alıcılarında ve ek adlarında arama. Henüz eşitlenmemiş sağlayıcı geçmişi aranmaz.
+- Biçimlendirilmiş yeni ileti, ekler, alıcı önerileri, tümünü yanıtlama ve ileti başlıklarıyla bağlanan hesap bazlı konuşmalar.
+- Şifreli yerel mail/taslaklar ve taşınabilir yedekler; Windows DPAPI korumalı kasa anahtarı.
+- Açık işlemle sağlayıcıya taslak kopyası kaydetme ve özgün ekleriyle devam etme. Sağlayıcıdaki özgün taslak korunur.
+- Ayrı yerel/sağlayıcı etiketleri ve hesap/klasör kapsamlı sınıflandırma kuralları. Sağlayıcı etiketi ve mail işlemleri onay ister; kısmi hatada tamamlanan işlemler sessizce tekrarlanmaz.
+- Dış görselleri/takibi engelleyen korumalı HTML görünümü, beş tema ve İngilizce/Türkçe/Almanca arayüz.
+- İsteğe bağlı Gemini, OpenAI, Claude ve Ollama bağlantı altyapısı. Yapılandırılıp etkinleştirilmedikçe AI kullanılamaz; normal mail kullanımı AI gerektirmez.
 
-### Hesap kurulumu
+Gmail etiketleri sunucunun bildirdiği IMAP uzantısını kullanır. Diğer sağlayıcılarda yazılabilir IMAP anahtar sözcük desteği gerekir; bunlar Outlook Kategorileri değildir. Ayrıntılar: [mail akışları](docs/mail-workflows.md), [arka plan eşitlemesi](docs/background-sync.md), [depolama ve yedekler](docs/local-mail-store.md).
 
-- **Gmail:** IMAP/SMTP için Google uygulama şifresi kullanın.
-- **Outlook / Hotmail:** `MICROSOFT_CLIENT_ID` yapılandırıldığında PKCE destekli Microsoft OAuth kullanılabilir.
-- **Apple Mail:** Apple uygulamaya özel parolası kullanın.
-- **Yandex ve diğer sağlayıcılar:** Gerektiğinde uygulama parolası veya manuel IMAP/SMTP ayarlarını kullanın.
+### Hesap kurulumu ve gizlilik
 
-Parolaları ve API anahtarlarını depoya göndermeyin. Yerel yapılandırma için [.env.example](.env.example) dosyasını kopyalayın. Mail içeriği korumalı bir çerçevede gösterilir; bulut AI erişimi kullanıcı açıkça yapılandırana kadar kapalıdır.
+- **Gmail:** kayıtlı Google Desktop uygulamasıyla sistem tarayıcısında OAuth veya kullanılabiliyorsa uygulama parolası.
+- **Outlook/Hotmail:** kayıtlı Microsoft public desktop uygulamasıyla sistem tarayıcısında OAuth.
+- **iCloud Mail, Yandex ve standart IMAP/SMTP:** manuel sunucu ayarları ve sağlayıcının istediği uygulama parolası.
 
-### Geliştirme
+OAuth kayıtlarını hesap penceresinde yapılandırın; [masaüstü OAuth kurulumu](docs/oauth-desktop.md) gerekli bilgileri açıklar. OAuth örnek sağlayıcılarla test edilmiştir. Gerçek Gmail/Outlook girişi, teslimat ve klasör eşleşmesi kayıtları ve etkileşimli testleri bekler; herkese dağıtım için ilgili sağlayıcı onayları gerekir.
 
-Node.js ve npm gerektirir.
+Yenileme bilgileri ve açıkça kaydedilen sırlar şifreli yerel kasada tutulur. Parola, anahtar, token veya kullanıcı maillerini Git'e eklemeyin. [.env.example](.env.example) yalnızca yer tutucular içerir. Bulut AI yapılandırma ve gizlilik izni gerektirir.
+
+### Geliştirme ve doğrulama
+
+**Node.js 22.13+** ve npm gerekir. Proje kökünden çalıştırın:
 
 ```powershell
 npm ci
-npm run dev          # Web geliştirme
-npm run dev:desktop  # Masaüstü geliştirme
-npm run lint
-npm test
-npm run build
-```
-
-Platform derlemeleri:
-
-```powershell
+npm run dev:desktop
+npm run verify:desktop
 npm run build:win
-npm run build:mac
-npm run build:linux
-npm run build:android
-npm run build:ios
+node tests/package-smoke.cjs
 ```
 
-macOS derlemesi macOS/Xcode, Android derlemesi Android SDK gerektirir. Arayüz testi için önce `npm run build`, ardından Chrome kurulu bir sistemde `npm run test:ui` çalıştırın.
+Tarayıcı testleri Chrome gerektirir. Paket kontrolünü Windows derlemesinden sonra çalıştırın; mevcut hesaplar yerine yalıtılmış profil kullanılır.
 
-### Testler
+**11 Ekim 2026 doğrulaması:** Windows ve Linux'ta TypeScript, üretim derlemesi, 183 güvenlik/regresyon/klasör testi ve arayüz/örnek OAuth/eşitleme/yeniden bağlantı/şifreli önbellek akışları geçti. Windows NSIS paketi ve gerçek paketlenmiş Electron penceresi açılışı geçti. Bunlar gerçek mail teslimatını kanıtlamaz. AI canlı doğrulaması ve son performans/yayın hazırlığı ayrı aşamalardır.
 
-`npm test`; mail, güvenlik, AI gizliliği, eklenti ve yerel oturum kontrollerini çalıştırır. Derlemeden sonra `npm run test:ui` örnek verilerle tarayıcı akışlarını, `node tests/package-smoke.cjs` paketlenmiş Windows sunucusunu kontrol eder. Bu kontroller gerçek Gmail/Outlook erişimini veya mail teslimatını kanıtlamaz.
+İsteğe bağlı salt okunur sağlayıcı kontrolü: `npm run test:providers:live`. Yeni kimlik bilgilerini özel olarak işlem ortamına verin; eksik bilgilerde `BLOCKED` döner. Test mail göndermez, taşımaz veya silmez.
 
-İsteğe bağlı salt okunur hesap kontrolü: `npm run test:providers:live`. `SIFT_LIVE_EMAIL` ve yeni bir `SIFT_LIVE_PASSWORD` (uygulama parolası) veya `SIFT_LIVE_ACCESS_TOKEN` değerini özel olarak işlem ortamına verin. Bilgiler eksikse `BLOCKED` döner. Test mail göndermez veya silmez. Kimlik bilgilerini kaynak koda ya da Git'e kaydetmeyin.
+### Yapı ve platformlar
 
-### Proje yapısı
+- `core/` — mail, eşitleme, hesap/OAuth, depolama, güvenlik, kurallar, AI ve eklentiler.
+- `shared/` — React arayüzü, tipler ve ortak servisler.
+- `apps/desktop/` — Electron masaüstü kabuğu.
+- `apps/web/` — Vite web/PWA; `npm run dev:web` / `npm run build:web`.
+- `apps/mobile/` — Capacitor Android/iOS kaynak projeleri.
+- `tests/` — otomatik ve örnek verili kontroller.
 
-- `core/` — mail, senkronizasyon, güvenlik, kurallar, AI ve eklentiler
-- `shared/` — ortak React arayüzü, tipler, mağazalar ve servisler
-- `apps/desktop/` — Electron masaüstü uygulaması
-- `apps/web/` — Vite web/PWA uygulaması
-- `apps/mobile/` — Capacitor Android ve iOS projeleri
-- `tests/` — güvenlik, mail, eklenti, arayüz ve paket kontrolleri
+Web/mobil kaynakları bulunur; Windows testleri üretim web kimlik doğrulamasını, mobil hazır oluşunu veya yerel macOS/iOS doğrulamasını kanıtlamaz. Platform belgeleri: [masaüstü](apps/desktop/README.md), [web](apps/web/README.md), [mobil](apps/mobile/README.md).
 
 ## License / Lisans
 

@@ -4,7 +4,8 @@
  */
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { ensureFreshMicrosoftCredentials, syncEmailsFromBackend } from './services/mailSyncService';
+import { syncEmailsFromBackend } from './services/mailSyncService';
+import { ensureFreshAccountCredentials, prepareAccountConnection, invalidateAccountSession, reconnectAccount } from './services/accountService';
 import { clearOfflineAnalysis } from './services/emailAnalyzer';
 import { safeUnsubscribeTarget } from './services/unsubscribeSafety';
 import {
@@ -53,8 +54,12 @@ import { AI_CONNECTION_CHANGED, refreshAIConnections } from './services/aiConnec
 import { safeFetchJson } from './services/apiClient';
 import { MailViewRequestGuard } from './services/mailViewGuard';
 import { executeConfirmedMailBatch, selectSenderHistory } from './services/mailActionSafety';
+import { buildMailActionRequest } from './services/mailActionIdentity';
 import { mergeMailRefresh } from './services/mailMerge';
-import { ComposeDraft, ReplyDraft, loadLocalMailSnapshot, saveLocalMailSnapshot } from './services/localMailStore';
+import { BackgroundMailScheduler, nextKnownUidBatch, reconcileFolderDelta } from './services/backgroundMailSync';
+import {relatedThread,matchesMailSearch,mailAddresses,relocateVerifiedMessage} from '../core/mail/workflows';
+import {providerMessageConfig} from './services/providerMail';
+import { ComposeDraft, ReplyDraft, mailSnapshot, loadLocalMailSnapshot, saveLocalMailSnapshot, blockAccountCache, unblockAccountCache, forgetLocalAccount } from './services/localMailStore';
 import { motion, AnimatePresence } from 'motion/react';
 import { useSettingsStore } from './stores/useSettingsStore';
 import { ProposedAIAction, generateSmartAIAction } from './services/ai/langchainTools';
@@ -149,16 +154,15 @@ export default function App() {
         .map(account => ({...account, status: 'error' as const, totalCount: 0, unreadCount: 0, mailboxes: []}));
     } catch { return INITIAL_ACCOUNTS; }
   });
-  useEffect(() => {
-    localStorage.setItem('sift_accounts_meta_v1', JSON.stringify(accounts.map(account => ({
-      id: account.id, email: account.email, displayName: account.displayName,
-      provider: account.provider, isPrimary: account.isPrimary, imapConfig: account.imapConfig,
-    }))));
-  }, [accounts]);
   const [activeAccountId, setActiveAccountId] = useState<string | 'all'>('all');
+  const accountsRef = useRef(accounts);
+  useEffect(()=>{accountsRef.current=accounts;},[accounts]);
+  const mailRestoreRef = useRef<Promise<void>>(Promise.resolve());
   const mailViewGuardRef = useRef(new MailViewRequestGuard());
   const accountSyncGenerationRef = useRef<Record<string, number>>({});
-  const inboxPollCountRef = useRef<Record<string, number>>({});
+  const removingAccountsRef = useRef(new Set<string>());
+  const knownUidCheckRef = useRef<Record<string, number>>({});
+  const mailMutationRevisionRef = useRef<Record<string, number>>({});
   const [isDesktopModalOpen, setIsDesktopModalOpen] = useState(false);
   const [isMultiAccountModalOpen, setIsMultiAccountModalOpen] = useState(false);
   const [isVaultModalOpen, setIsVaultModalOpen] = useState(false);
@@ -175,6 +179,8 @@ export default function App() {
   const [replyDrafts, setReplyDrafts] = useState<Record<string, ReplyDraft>>({});
   const [mailCacheLoaded, setMailCacheLoaded] = useState(false);
   const mailCacheWriteRef = useRef<Promise<void>>(Promise.resolve());
+  const mailDataTransferRef = useRef(false);
+  const [mailPersistenceRevision,setMailPersistenceRevision] = useState(0);
   const emailsRef = useRef<EmailMessage[]>([]);
   useEffect(() => { emailsRef.current = emails; }, [emails]);
   const [isLoading, setIsLoading] = useState(false);
@@ -201,11 +207,10 @@ export default function App() {
     refresh(); window.addEventListener(AI_CONNECTION_CHANGED,refresh);
     return()=>{active=false;window.removeEventListener(AI_CONNECTION_CHANGED,refresh)};
   },[aiProvider,setAIEnabled]);
-  useEffect(() => { localStorage.setItem('sift_user_labels', JSON.stringify(userLabels)); }, [userLabels]);
   const knownContacts = useMemo(() => Array.from(new Set(
     emails
       .filter(email => activeAccountId === 'all' || email.accountId === activeAccountId)
-      .flatMap(email => [email.fromEmail || '', ...(email.to || [])])
+      .flatMap(email => mailAddresses([email.fromEmail || '', ...(email.to || []),...(email.cc || [])]))
       .filter(Boolean)
   )).sort(), [emails, activeAccountId]);
 
@@ -219,7 +224,6 @@ export default function App() {
       return Array.isArray(saved) && saved.every(rule => rule && typeof rule.id === 'string' && typeof rule.patternValue === 'string' && typeof rule.isActive === 'boolean') ? saved : DEFAULT_AUTO_RULES;
     } catch { return DEFAULT_AUTO_RULES; }
   });
-  useEffect(() => { localStorage.setItem('sift_auto_rules', JSON.stringify(autoRules)); }, [autoRules]);
   const [autoWatcherEnabled, setAutoWatcherEnabled] = useState(true);
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
 
@@ -271,10 +275,11 @@ export default function App() {
 
   useEffect(() => {
     let mounted = true;
-    void loadLocalMailSnapshot().then(snapshot => {
+    const restoring = loadLocalMailSnapshot().then(snapshot => {
       if (!mounted) return;
       if (!snapshot) { setMailCacheLoaded(true); return; }
-      const knownAccounts = new Set(accounts.map(account => account.id));
+      const restoredAccounts = snapshot.accounts || accounts;
+      const knownAccounts = new Set(restoredAccounts.map(account => account.id));
       if (snapshot.messages.some(email => !knownAccounts.has(email.accountId))) {
         showToast('Bazı hesap kayıtları eksik; mevcut şifreli posta dosyası korunuyor.', 'error');
         return;
@@ -286,24 +291,37 @@ export default function App() {
       });
       setComposeDraft(prev => prev || snapshot.composeDraft);
       setReplyDrafts(prev => ({ ...snapshot.replyDrafts, ...prev }));
+      if(snapshot.accounts) {
+        const restored=snapshot.accounts.map(account=>({...account,status:'error' as const}));
+        accountsRef.current=restored;setAccounts(restored);
+      }
+      if(snapshot.labels) setUserLabels(snapshot.labels);
+      if(snapshot.rules) setAutoRules(snapshot.rules);
       setMailCacheLoaded(true);
     }).catch(() => {
       if (mounted) showToast('Yerel posta verisi açılamadı; mevcut şifreli dosya korunuyor.', 'error');
     });
+    mailRestoreRef.current=restoring;
     return () => { mounted = false; };
   }, []);
 
   useEffect(() => {
     if (!mailCacheLoaded) return;
-    const snapshot = { version: 1 as const, messages: emails.slice(0, 5000), composeDraft, replyDrafts };
+    const snapshot = mailSnapshot(emails,composeDraft,replyDrafts,accounts,userLabels,autoRules);
     const timer = window.setTimeout(() => {
-      mailCacheWriteRef.current = mailCacheWriteRef.current.catch(() => {}).then(() => saveLocalMailSnapshot(snapshot));
+      if(mailDataTransferRef.current) return;
+      mailCacheWriteRef.current = mailCacheWriteRef.current.catch(() => {}).then(async () => {
+        await saveLocalMailSnapshot(snapshot);
+        // Remove legacy plaintext metadata only after the encrypted DB acknowledges persistence.
+        for(const key of ['sift_accounts_meta_v1','sift_user_labels','sift_auto_rules']) localStorage.removeItem(key);
+      });
       void mailCacheWriteRef.current.catch(() => showToast('Yerel posta verisi kaydedilemedi.', 'error'));
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [mailCacheLoaded, emails, composeDraft, replyDrafts, showToast]);
+  }, [mailCacheLoaded, emails, composeDraft, replyDrafts, accounts, userLabels, autoRules, mailPersistenceRevision, showToast]);
 
   const updateAccountCredentials = useCallback((accountId: string, credentials: DynamicLoginCredentials) => {
+    if (removingAccountsRef.current.has(accountId)) return;
     setCredentialsByAccount(prev => ({...prev, [accountId]: credentials}));
     setSessionCredentials(prev => prev?.email.toLowerCase() === credentials.email.toLowerCase() ? credentials : prev);
   }, []);
@@ -321,18 +339,19 @@ export default function App() {
     if (!email.uid || !email.folder || !email.accountId) throw new Error(t('mailActions.missingIdentity'));
     const credentials = credentialsByAccount[email.accountId];
     if (!credentials) throw new Error('Bu işlem için hesaba yeniden giriş yapın.');
-    const activeCredentials = await ensureFreshMicrosoftCredentials(credentials);
+    if (removingAccountsRef.current.has(email.accountId)) throw new Error('Hesap kaldırılıyor.');
+    const account = accounts.find(item => item.id === email.accountId);
+    buildMailActionRequest(email, account, credentials, action);
+    const activeCredentials = await ensureFreshAccountCredentials(credentials);
+    if (removingAccountsRef.current.has(email.accountId)) throw new Error('Hesap kaldırılıyor.');
     if (activeCredentials !== credentials) updateAccountCredentials(email.accountId, activeCredentials);
+    mailMutationRevisionRef.current[email.accountId] = (mailMutationRevisionRef.current[email.accountId] || 0) + 1;
     const result = await safeFetchJson<{success:boolean;verified:boolean;destination?:string}>('/api/imap/action', {
-      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({
-        host: activeCredentials.host, port: activeCredentials.port || 993, secure: activeCredentials.secure !== false,
-        auth: { user: activeCredentials.email, pass: activeCredentials.password || undefined, accessToken: activeCredentials.accessToken },
-        accountId: email.accountId, uid: email.uid, sourceFolder: email.folder, action,
-      }),
-    });
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(buildMailActionRequest(email, account, activeCredentials, action)),
+    }).finally(() => { mailMutationRevisionRef.current[email.accountId] = (mailMutationRevisionRef.current[email.accountId] || 0) + 1; });
     if (!result.success || !result.verified) throw new Error('Posta sunucusu işlemi doğrulamadı.');
     return result;
-  }, [credentialsByAccount, updateAccountCredentials, t]);
+  }, [accounts, credentialsByAccount, updateAccountCredentials, t]);
 
   const handleOpenDetail = useCallback((item: EmailMessage) => {
     setDetailEmail(item);
@@ -353,13 +372,16 @@ export default function App() {
         if (!email.accountId || !email.uid || !email.folder) throw new Error('Ek için posta sunucusu bilgisi bulunamadı.');
         const credentials = credentialsByAccount[email.accountId];
         if (!credentials) throw new Error('Eki indirmek için hesaba yeniden giriş yapın.');
-        const activeCredentials = await ensureFreshMicrosoftCredentials(credentials);
+        if (removingAccountsRef.current.has(email.accountId)) throw new Error('Hesap kaldırılıyor.');
+        buildMailActionRequest(email, accounts.find(account => account.id === email.accountId), credentials, 'mark_read');
+        const activeCredentials = await ensureFreshAccountCredentials(credentials);
+        if (removingAccountsRef.current.has(email.accountId)) throw new Error('Hesap kaldırılıyor.');
         if (activeCredentials !== credentials) updateAccountCredentials(email.accountId, activeCredentials);
         const result = await safeFetchJson<{ success: boolean; filename: string; contentType: string; content: string }>('/api/imap/attachment', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
             host: activeCredentials.host, port: activeCredentials.port || 993, secure: activeCredentials.secure !== false,
             auth: { user: activeCredentials.email, pass: activeCredentials.password || undefined, accessToken: activeCredentials.accessToken },
-            folder: email.folder, uid: email.uid, index,
+            folder: email.folder, uid: email.uid, index, expectedUidValidity: email.uidValidity, messageId: email.messageId,
           }),
         });
         if (!result.success || !result.content) throw new Error('Ek indirilemedi.');
@@ -374,47 +396,19 @@ export default function App() {
         window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
       } catch (error: any) { showToast(error.message || 'Ek indirilemedi.', 'error'); }
     })();
-  }, [credentialsByAccount, updateAccountCredentials, showToast]);
+  }, [accounts, credentialsByAccount, updateAccountCredentials, showToast]);
 
   // Handle Swipe-to-Action: Mark safe and archive
   const handleMarkSafeArchive = useCallback(
     async (item: string | EmailMessage) => {
       const id = typeof item === 'string' ? item : item.id;
       const email = typeof item === 'string' ? emails.find(entry => entry.id === item) : item;
-      try { if (email) await performRemoteMailAction(email, 'archive'); }
+      if(!email)return;
+      let destination='';
+      try { destination=(await performRemoteMailAction(email, 'archive')).destination || ''; }
       catch (error: any) { showToast(error.message || 'İleti arşivlenemedi.', 'error'); return; }
-      setEmails((prev) =>
-        prev.map((e) => {
-          if (e.id === id) {
-            return {
-              ...e,
-              isRead: e.isRead,
-              folderType: 'archive',
-              safeCategory: e.safeCategory || 'work',
-              analysis: e.analysis
-                ? {
-                    ...e.analysis,
-                    isSafe: true,
-                    classification: 'safe',
-                    threatLevel: 'none',
-                  }
-                : {
-                    classification: 'safe',
-                    isSafe: true,
-                    safetyScore: 98,
-                    threatLevel: 'none',
-                    isSubscription: false,
-                    unsubscribeUrl: '',
-                    reasoning: 'Kullanıcı tarafından güvenli olarak onaylandı ve arşivlendi.',
-                    keyFindings: ['Kullanıcı doğrulaması'],
-                    suggestedAction: 'keep_safe',
-                    analyzedAt: new Date().toISOString(),
-                  },
-            };
-          }
-          return e;
-        })
-      );
+      // A verified MOVE invalidates the source UID. Never reuse it in the destination.
+      setEmails(prev=>relocateVerifiedMessage(prev,{...email,safeCategory:email.safeCategory || 'work'},destination,'archive'));
       showToast('İleti güvenli olarak onaylandı ve arşivlendi.', 'success');
     },
     [emails, performRemoteMailAction, showToast]
@@ -466,28 +460,25 @@ export default function App() {
   // Central Direct IMAP Mail Synchronization Handler (Dynamic In-Memory)
   const handleLoginAndSync = useCallback(
     async (credentials: DynamicLoginCredentials) => {
+      // Do not create a second account or overwrite a live session while async disk restoration finishes.
+      await mailRestoreRef.current;
+      const currentAccounts=accountsRef.current;
       setSyncError(null);
       const cleanEmail = credentials.email.trim().toLowerCase();
-      const accountId = accounts.find(a => a.email.toLowerCase() === cleanEmail)?.id || `acc-${Date.now()}`;
+      const accountId = currentAccounts.find(a => a.email.toLowerCase() === cleanEmail)?.id || `acc-${Date.now()}`;
+      if (removingAccountsRef.current.has(accountId)) throw new Error('Hesap kaldırılıyor. İşlemin tamamlanmasını bekleyin.');
+      unblockAccountCache(accountId);
       const syncGeneration = (accountSyncGenerationRef.current[accountId] || 0) + 1;
       accountSyncGenerationRef.current[accountId] = syncGeneration;
       const discovered = detectMailProvider(cleanEmail);
-      const existingAccount = accounts.find(account => account.id === accountId);
-      const imapHost = credentials.host || existingAccount?.imapConfig?.host || discovered.imapHost;
-      const imapPort = credentials.port || existingAccount?.imapConfig?.port || discovered.imapPort;
-      const smtpHost = credentials.smtpHost || existingAccount?.imapConfig?.smtpHost || discovered.smtpHost;
-      const smtpPort = credentials.smtpPort || existingAccount?.imapConfig?.smtpPort || discovered.smtpPort;
-      const smtpSecure = credentials.smtpSecure ?? existingAccount?.imapConfig?.smtpSecure ?? discovered.smtpSecure;
-      const normalizedCredentials = {
-        ...credentials, host: imapHost, port: imapPort,
-        secure: credentials.secure ?? existingAccount?.imapConfig?.secure ?? discovered.imapSecure,
-        smtpHost, smtpPort, smtpSecure,
-      };
+      const existingAccount = currentAccounts.find(account => account.id === accountId);
+      const normalizedCredentials = prepareAccountConnection(credentials, existingAccount);
+      const { host: imapHost, port: imapPort, smtpHost, smtpPort, smtpSecure } = normalizedCredentials;
       const shellAccount: ConnectedAccount = {
         ...existingAccount,
         id: accountId, provider: discovered.provider, email: cleanEmail, displayName: existingAccount?.displayName || cleanEmail,
-        status: 'syncing', isPrimary: existingAccount?.isPrimary ?? accounts.length === 0, totalCount: existingAccount?.totalCount || 0, unreadCount: existingAccount?.unreadCount || 0, mailboxes: existingAccount?.mailboxes || [],
-        imapConfig: { host: imapHost, port: imapPort, secure: credentials.secure ?? existingAccount?.imapConfig?.secure ?? discovered.imapSecure, username: cleanEmail, smtpHost, smtpPort, smtpSecure },
+        status: 'syncing', isPrimary: existingAccount?.isPrimary ?? currentAccounts.length === 0, totalCount: existingAccount?.totalCount || 0, unreadCount: existingAccount?.unreadCount || 0, mailboxes: existingAccount?.mailboxes || [],
+        imapConfig: { host: imapHost!, port: imapPort!, secure: normalizedCredentials.secure !== false, username: cleanEmail, smtpHost, smtpPort, smtpSecure, oauthProvider: credentials.oauthProvider },
       };
       setAccounts(prev => [shellAccount, ...prev.filter(a => a.id !== accountId)]);
       setActiveAccountId(accountId);
@@ -497,8 +488,12 @@ export default function App() {
       setIsSyncingEmails(true);
 
       try {
-        const activeCredentials = await ensureFreshMicrosoftCredentials(normalizedCredentials);
+        const activeCredentials = await ensureFreshAccountCredentials(normalizedCredentials);
+        if (accountSyncGenerationRef.current[accountId] !== syncGeneration) return;
         if (activeCredentials !== normalizedCredentials) updateAccountCredentials(accountId, activeCredentials);
+        // Enter the mail UI before downloading messages; auth lifecycle is not tied to the modal.
+        setIsLoginModalOpen(false);
+        setIsMultiAccountModalOpen(false);
         const { messages, accountEmail, provider, mailboxes } = await syncEmailsFromBackend({
           email: activeCredentials.email,
           password: activeCredentials.password,
@@ -515,6 +510,15 @@ export default function App() {
         const refreshedFolders = mailboxes.filter(mailbox => ['inbox', 'spam', 'sent'].includes(mailbox.type)).map(mailbox => mailbox.path);
         setEmails(prev => mergeMailRefresh(prev, categorized, accountId, refreshedFolders).messages);
 
+        // A reconnect's recent window must not jump over a pending backlog in the previous generation.
+        for (const mailbox of mailboxes) {
+          if (!mailbox.uidValidity) continue;
+          const previous = existingAccount?.mailboxes?.find(item => item.path === mailbox.path && item.uidValidity === mailbox.uidValidity);
+          const loaded = messages.filter(item => item.folder === mailbox.path).reduce((n,item) => Math.max(n,item.uid || 0),0);
+          const priorLoaded = emailsRef.current.filter(item => item.accountId === accountId && item.folder === mailbox.path && item.uidValidity === mailbox.uidValidity)
+            .reduce((n,item) => Math.max(n,item.uid || 0),0);
+          mailbox.syncCursor = previous?.syncCursor ?? (previous ? priorLoaded : loaded);
+        }
         const newAccount: ConnectedAccount = {
           id: accountId,
           mailboxes,
@@ -527,13 +531,14 @@ export default function App() {
           totalCount: mailboxes.reduce((sum, mailbox) => sum + (mailbox.totalMessages || 0), 0),
           unreadCount: categorized.filter((e) => !e.isRead).length,
           imapConfig: {
-            host: imapHost,
-            port: imapPort,
+            host: imapHost!,
+            port: imapPort!,
             secure: credentials.secure ?? existingAccount?.imapConfig?.secure ?? discovered.imapSecure,
             username: accountEmail,
             smtpHost,
             smtpPort,
             smtpSecure,
+            oauthProvider: credentials.oauthProvider,
           },
         };
 
@@ -547,11 +552,11 @@ export default function App() {
         );
       } catch (error: any) {
         if (accountSyncGenerationRef.current[accountId] !== syncGeneration) return;
-        console.error("Auth error details:", error);
+        console.error('[Sift Mail] ACCOUNT_LOGIN_FAILED');
         const errorMessage =
           typeof error === 'string'
             ? error
-            : (error as any)?.message || (error as any)?.error || JSON.stringify(error);
+            : (error as any)?.message || 'Posta hesabına bağlanılamadı.';
         setSyncError(errorMessage);
         setAccounts(prev => prev.map(a => a.id === accountId ? {...a, status:'error'} : a));
         showToast(errorMessage, 'error');
@@ -566,68 +571,93 @@ export default function App() {
   const handleSyncEmails = useCallback(async () => {
     const targets = accounts.filter(a => activeAccountId === 'all' || a.id === activeAccountId);
     if (!targets.length) { setIsLoginModalOpen(true); return; }
-    const credentials = targets.map(a => credentialsByAccount[a.id]).filter(Boolean);
-    if (!credentials.length) {
-      setIsLoginModalOpen(true);
-      return;
-    }
-    for (const credential of credentials) {
-      try { await handleLoginAndSync(credential); } catch { /* Error is displayed by the login handler. */ }
-    }
-  }, [accounts, activeAccountId, credentialsByAccount, handleLoginAndSync]);
-
-  useEffect(() => {
-    if (!autoWatcherEnabled || !accounts.some(account => account.status === 'connected' && credentialsByAccount[account.id])) return;
-    let stopped = false;
-    let running = false;
-    const pollInbox = async () => {
-      if (running || stopped || isSyncingEmails) return;
-      running = true;
+    for (const account of targets) {
+      if (removingAccountsRef.current.has(account.id)) continue;
+      const generation = accountSyncGenerationRef.current[account.id];
       try {
-        for (const account of accounts) {
-          if (stopped) break;
-          const credentials = credentialsByAccount[account.id];
-          const inbox = account.mailboxes?.find(mailbox => mailbox.type === 'inbox');
-          if (!credentials || !inbox || account.status !== 'connected') continue;
-          try {
-            const activeCredentials = await ensureFreshMicrosoftCredentials(credentials);
-            if (activeCredentials !== credentials) updateAccountCredentials(account.id, activeCredentials);
-            const pollCount = (inboxPollCountRef.current[account.id] || 0) + 1;
-            inboxPollCountRef.current[account.id] = pollCount;
-            const forceWindowRefresh = pollCount % 15 === 0;
-            const highestLoadedUid = emailsRef.current.reduce((highest, email) =>
-              email.accountId === account.id && email.folder === inbox.path ? Math.max(highest, email.uid || 0) : highest, 0);
-            const result = await syncEmailsFromBackend({
-              ...activeCredentials, accountId: account.id, folder: inbox.path, maxResults: 25,
-              sinceUid: !forceWindowRefresh && highestLoadedUid > 0 && inbox.uidValidity ? highestLoadedUid : undefined,
-              expectedUidValidity: !forceWindowRefresh ? inbox.uidValidity : undefined,
-            }, { retries: 2, retryDelayMs: 750 });
-            if (stopped) break;
-            const categorized = applyRulesToEmails(result.messages, autoRules);
-            const merged = result.incremental
-              ? (() => {
-                  const ids = new Set(emailsRef.current.map(email => email.id));
-                  const added = categorized.filter(email => !ids.has(email.id));
-                  return { messages: [...added, ...emailsRef.current], added };
-                })()
-              : mergeMailRefresh(emailsRef.current, categorized, account.id, [inbox.path]);
-            emailsRef.current = merged.messages;
-            setEmails(merged.messages);
-            setAccounts(prev => prev.map(current => {
-              if (current.id !== account.id) return current;
-              const incoming = new Map(result.mailboxes.map(mailbox => [mailbox.path, mailbox]));
-              const mailboxes = (current.mailboxes || []).map(mailbox => ({ ...mailbox, ...(incoming.get(mailbox.path) || {}) }));
-              for (const mailbox of result.mailboxes) if (!mailboxes.some(item => item.path === mailbox.path)) mailboxes.push(mailbox);
-              return {...current, lastSyncAt: new Date().toISOString(), mailboxes};
-            }));
-            if (merged.added.length) void sendLocalNotification('Sift Mail', `${account.email}: ${merged.added.length} yeni ileti`);
-          } catch (error) { console.warn('Arka plan posta kontrolü başarısız:', error); }
+        const credential = credentialsByAccount[account.id] || await reconnectAccount(account);
+        if (removingAccountsRef.current.has(account.id) || accountSyncGenerationRef.current[account.id] !== generation) continue;
+        await handleLoginAndSync(credential);
+      } catch (error: any) {
+        if (error.code === 'MANUAL_LOGIN_REQUIRED') setIsLoginModalOpen(true);
+        else if (error.code === 'REAUTH_REQUIRED') { showToast(error.message, 'error'); setIsMultiAccountModalOpen(true); }
+        else showToast(error.message || 'Hesap bağlantısı yenilenemedi.', 'error');
+      }
+    }
+  }, [accounts, activeAccountId, credentialsByAccount, handleLoginAndSync, showToast]);
+
+  // Keep one scheduler alive across React renders; a result must not restart polling or create overlapping cycles.
+  const backgroundStateRef = useRef({ accounts, credentialsByAccount, autoRules, isSyncingEmails, mailCacheLoaded });
+  const registerBackgroundRef = useRef<() => void>(() => {});
+  backgroundStateRef.current = { accounts, credentialsByAccount, autoRules, isSyncingEmails, mailCacheLoaded };
+  useEffect(() => {
+    if (!autoWatcherEnabled) return;
+    const scheduler = new BackgroundMailScheduler();
+    const pollFolders = async (immediate = false) => {
+      const state = backgroundStateRef.current;
+      if (!navigator.onLine || state.isSyncingEmails || !state.mailCacheLoaded || mailDataTransferRef.current) return;
+      const jobs = state.accounts.filter(a => a.status === 'connected' && state.credentialsByAccount[a.id] && !removingAccountsRef.current.has(a.id))
+        .flatMap(account => (account.mailboxes || []).map(mailbox => ({ key: JSON.stringify([account.id,mailbox.path]), generation: accountSyncGenerationRef.current[account.id] || 0 })));
+      await scheduler.tick(jobs,async (job,signal) => {
+        const [accountId,folder] = JSON.parse(job.key) as [string,string];
+        const current = backgroundStateRef.current;
+        const account = current.accounts.find(a => a.id === accountId);
+        const mailbox = account?.mailboxes?.find(m => m.path === folder);
+        const credentials = current.credentialsByAccount[accountId];
+        const mutationRevision = mailMutationRevisionRef.current[accountId] || 0;
+        const valid = () => !signal.aborted && !mailDataTransferRef.current && !backgroundStateRef.current.isSyncingEmails &&
+          !removingAccountsRef.current.has(accountId) && accountSyncGenerationRef.current[accountId] === job.generation && (mailMutationRevisionRef.current[accountId] || 0) === mutationRevision;
+        if (!account || account.status !== 'connected' || !mailbox || !credentials || !valid()) throw new Error('SYNC_CANCELLED');
+        try {
+          const activeCredentials = await ensureFreshAccountCredentials(credentials);
+          if (!valid()) throw new Error('SYNC_CANCELLED');
+          if (activeCredentials !== credentials) updateAccountCredentials(accountId,activeCredentials);
+          const knownUids = nextKnownUidBatch(emailsRef.current,accountId,folder,mailbox.uidValidity,knownUidCheckRef.current[job.key] || 0);
+          const loaded = emailsRef.current.filter(m => m.accountId === accountId && m.folder === folder && m.uidValidity === mailbox.uidValidity)
+            .reduce((n,m) => Math.max(n,m.uid || 0),0);
+          const result = await syncEmailsFromBackend({ ...activeCredentials,accountId,folder,maxResults:25,knownUids,
+            sinceUid: mailbox.uidValidity ? mailbox.syncCursor ?? loaded : undefined, expectedUidValidity:mailbox.uidValidity },{signal});
+          if (!valid()) throw new Error('SYNC_CANCELLED');
+          if (!result.delta || (result.incremental && result.delta.nextUid < (mailbox.syncCursor ?? loaded))) throw new Error('INVALID_FOLDER_DELTA');
+          const folderPaths = new Set(result.mailboxes.map(m => m.path));
+          if (!folderPaths.has(folder) || folderPaths.size !== result.mailboxes.length) throw new Error('INVALID_FOLDER_DELTA');
+          const categorized = applyRulesToEmails(result.messages,backgroundStateRef.current.autoRules);
+          const merged = reconcileFolderDelta(emailsRef.current,categorized,accountId,folder,mailbox.uidValidity,knownUids,result.delta);
+          // LIST is authoritative only after a successful folder response. A network failure never clears folders.
+          merged.messages = merged.messages.filter(m => m.accountId !== accountId || !m.uid || !m.folder || folderPaths.has(m.folder));
+          emailsRef.current = merged.messages;
+          setEmails(merged.messages);
+          // Update open detail only if it still belongs to this exact mailbox; never resurrect removed mail.
+          setDetailEmail(prev => prev?.accountId === accountId && prev.folder === folder ? merged.messages.find(m => m.id === prev.id) || null : prev);
+          knownUidCheckRef.current[job.key] = result.delta.reset ? 0 : knownUids.at(-1) || 0;
+          setAccounts(prev => prev.map(a => {
+            if (a.id !== accountId) return a;
+            const boxes = result.mailboxes.map(m => ({ ...a.mailboxes?.find(old => old.path === m.path),...m,
+              ...(m.path === folder ? {syncCursor:result.delta!.nextUid} : {}) }));
+            return { ...a,lastSyncAt:new Date().toISOString(),mailboxes:boxes,totalCount:boxes.reduce((n,m) => n + (m.totalMessages || 0),0),
+              unreadCount:merged.messages.filter(m => m.accountId === accountId && !m.isRead).length };
+          }));
+          if (mailbox.type === 'inbox' && merged.added.length) void sendLocalNotification('Sift Mail',`${account.email}: ${merged.added.length} ${t('sync.newMessages')}`);
+          return {hasMore:result.delta.hasMore};
+        } catch (error: any) {
+          if (valid() && (error.code === 'REAUTH_REQUIRED' || error.data?.code === 'REAUTH_REQUIRED')) {
+            setAccounts(prev => prev.map(a => a.id === accountId ? {...a,status:'error'} : a));
+            showToast(t('sync.reauthRequired'),'error');
+          }
+          // Fixed diagnostic only: never log provider responses, credentials or mail bodies.
+          if (!signal.aborted) console.warn('[Sift Mail] BACKGROUND_SYNC_FAILED');
+          throw error;
         }
-      } finally { running = false; }
+      },Date.now(),immediate);
     };
-    const timer = window.setInterval(() => { void pollInbox(); }, 120_000);
-    return () => { stopped = true; window.clearInterval(timer); };
-  }, [accounts, credentialsByAccount, autoRules, autoWatcherEnabled, isSyncingEmails, applyRulesToEmails, updateAccountCredentials]);
+    registerBackgroundRef.current = () => { void pollFolders(); };
+    void pollFolders(); // Register due times only; mail startup does not wait on network.
+    const timer = window.setInterval(() => { void pollFolders(); },15_000);
+    const online = () => { void pollFolders(true); };
+    window.addEventListener('online',online);
+    return () => { registerBackgroundRef.current = () => {}; scheduler.dispose(); window.clearInterval(timer); window.removeEventListener('online',online); };
+  }, [autoWatcherEnabled, applyRulesToEmails, updateAccountCredentials, showToast, t]);
+  useEffect(() => { registerBackgroundRef.current(); },[accounts,credentialsByAccount,isSyncingEmails,mailCacheLoaded,mailPersistenceRevision]);
 
   // Account management handlers
   const handleAddAccount = (
@@ -678,35 +708,52 @@ export default function App() {
     showToast(`${accountData.displayName} hesabı başarıyla bağlandı ve senkronize edildi!`, 'success');
   };
 
-  const handleRemoveAccount = (id: string) => {
-    clearOfflineAnalysis();
-    const removedEmail = accounts.find(account => account.id === id)?.email.toLowerCase();
-    if (mailCacheLoaded) {
-      const snapshot = {
-        version: 1 as const,
-        messages: emails.filter(email => email.accountId !== id).slice(0, 5000),
-        composeDraft: composeDraft?.accountId === id ? null : composeDraft,
-        replyDrafts: Object.fromEntries(Object.entries(replyDrafts).filter(([, draft]) => draft.accountId !== id)),
-      };
-      mailCacheWriteRef.current = mailCacheWriteRef.current.catch(() => {}).then(() => saveLocalMailSnapshot(snapshot));
-      void mailCacheWriteRef.current.catch(() => showToast('Kaldırılan hesabın yerel verisi silinemedi.', 'error'));
-    }
+  const handleRemoveAccount = async (id: string) => {
+    await mailRestoreRef.current;
+    const account = accountsRef.current.find(item => item.id === id);
+    if (!account || removingAccountsRef.current.has(id)) return;
+    removingAccountsRef.current.add(id);
+    invalidateAccountSession(account.email);
+    blockAccountCache(id);
     accountSyncGenerationRef.current[id] = (accountSyncGenerationRef.current[id] || 0) + 1;
     mailViewGuardRef.current.invalidate();
+    try {
+      // Drain already submitted writes before backend cleanup; later queued writes
+      // are filtered by blockAccountCache and cannot restore the removed account.
+      await mailCacheWriteRef.current.catch(() => {});
+      await forgetLocalAccount(id, account.email);
+    } catch {
+      removingAccountsRef.current.delete(id);
+      unblockAccountCache(id);
+      showToast('Hesabın yerel verileri temizlenemedi. Kaldırma işlemini yeniden deneyin.', 'error');
+      return;
+    }
+    clearOfflineAnalysis();
+    const removedEmail = accounts.find(account => account.id === id)?.email.toLowerCase();
+    emailsRef.current = emailsRef.current.filter(email => email.accountId !== id);
     setAccounts((prev) => prev.filter((a) => a.id !== id));
     setEmails((prev) => prev.filter((email) => email.accountId !== id));
     setComposeDraft(prev => prev?.accountId === id ? null : prev);
+    if (composeDraft?.accountId === id || composeForwardEmail?.accountId === id) {
+      setIsComposeOpen(false); setComposeForwardEmail(null);
+    }
     setReplyDrafts(prev => Object.fromEntries(Object.entries(prev).filter(([, draft]) => draft.accountId !== id)));
+    setDetailEmail(prev => prev?.accountId === id ? null : prev);
+    setReplyModalEmail(prev => prev?.accountId === id ? null : prev);
+    if (replyModalEmail?.accountId === id) { setIsReplyModalOpen(false); setReplyModalDraft(''); }
     setCredentialsByAccount((prev) => { const next = { ...prev }; delete next[id]; return next; });
     if (removedEmail) setSessionCredentials(prev => prev?.email.toLowerCase() === removedEmail ? null : prev);
     if (activeAccountId === id) {
       setActiveAccountId('all');
     }
+    setIsSyncingEmails(false);
     showToast('Hesap bağlantısı kaldırıldı.', 'info');
   };
 
   const handleRequestRemoveAccount = (id: string) => {
     const acc = accounts.find((a) => a.id === id);
+    if (!acc) return;
+    setIsMultiAccountModalOpen(false);
     setConfirmModal({
       isOpen: true,
       title: 'Hesabı Kaldır',
@@ -714,7 +761,7 @@ export default function App() {
       confirmLabel: 'Hesabı Kaldır',
       isDestructive: true,
       action: async () => {
-        handleRemoveAccount(id);
+        await handleRemoveAccount(id);
       },
     });
   };
@@ -723,7 +770,7 @@ export default function App() {
     if (sessionCredentials) {
       void handleLoginAndSync(sessionCredentials).catch(() => {});
     } else {
-      setIsLoginModalOpen(true);
+      void handleSyncEmails();
     }
   };
 
@@ -810,7 +857,7 @@ export default function App() {
       }
       showToast(`"${emailToAnalyze.subject.slice(0, 30)}..." [${aiProvider.toUpperCase()}] ile analiz edildi.`, 'success');
     } catch (err: any) {
-      console.error('Analiz hatası:', err);
+      console.error('[Sift AI] ANALYSIS_FAILED');
       setEmails((prev) =>
         prev.map((e) => (e.id === emailToAnalyze.id ? { ...e, isAnalyzing: false } : e))
       );
@@ -839,7 +886,7 @@ export default function App() {
               prev.map((e) => (e.id === email.id ? { ...e, analysis, safeCategory: safeCat } : e))
             );
           } catch (error) {
-            console.warn(`Analiz atlandı (${email.id}):`, error);
+            console.warn('[Sift AI] ANALYSIS_SKIPPED');
           }
         }
         count++;
@@ -847,7 +894,7 @@ export default function App() {
       }
       showToast(`Tüm iletiler [${aiProvider.toUpperCase()}] modeliyle incelendi ve kategorilere ayrıldı!`, 'success');
     } catch (error: any) {
-      console.error('Toplu tarama hatası:', error);
+      console.error('[Sift AI] BATCH_ANALYSIS_FAILED');
       showToast('Tarama sırasında bir hata oluştu.', 'error');
     } finally {
       setIsScanning(false);
@@ -882,13 +929,13 @@ export default function App() {
             prev.map((e) => (e.id === item.id ? { ...e, analysis, safeCategory: safeCat } : e))
           );
         } catch (err) {
-          console.warn('Otomatik kategorizasyon atlandı:', item.id, err);
+          console.warn('[Sift AI] CLASSIFICATION_SKIPPED');
         }
       }
 
       showToast('Tüm mevcut iletiler başarıyla kategorilere ayrıldı!', 'success');
     } catch (err: any) {
-      console.error('Kategorizasyon hatası:', err);
+      console.error('[Sift AI] CLASSIFICATION_FAILED');
       showToast('Kategorilendirme sırasında bir hata oluştu.', 'error');
     } finally {
       setIsCategorizing(false);
@@ -896,17 +943,55 @@ export default function App() {
   };
 
   // Sync Safe Categories
+  const continueProviderDraft=async(email:EmailMessage)=>{
+    const open=async()=>{
+      const account=accounts.find(item=>item.id===email.accountId),credentials=credentialsByAccount[email.accountId || ''];
+      if(!account || !credentials || removingAccountsRef.current.has(account.id)){showToast(t('compose.loginRequired'),'error');return;}
+      const generation=accountSyncGenerationRef.current[account.id];
+      try{
+        const active=await ensureFreshAccountCredentials(credentials);
+        if(removingAccountsRef.current.has(account.id) || generation!==accountSyncGenerationRef.current[account.id])return;
+        if(active!==credentials)updateAccountCredentials(account.id,active);
+        const result=await safeFetchJson<{success:boolean;draft:ComposeDraft}>('/api/mail/provider/draft/open',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(providerMessageConfig(account,active,email))});
+        if(!result.success || result.draft.accountId!==account.id)throw new Error('DRAFT_UNAVAILABLE');
+        if(removingAccountsRef.current.has(account.id) || generation!==accountSyncGenerationRef.current[account.id])return;
+        setComposeDraft(result.draft);setComposeForwardEmail(null);setDetailEmail(null);setIsComposeOpen(true);
+      }catch{showToast(t('workflow.draftFailed'),'error');}
+    };
+    if(composeDraft)setConfirmModal({isOpen:true,title:t('workflow.continueDraft'),description:t('compose.discard'),confirmLabel:t('workflow.continueDraft'),action:open});
+    else await open();
+  };
+
+  const applyProviderLabel=async(email:EmailMessage,label:string,remove:boolean)=>{
+    const account=accounts.find(item=>item.id===email.accountId),credential=credentialsByAccount[email.accountId || ''];
+    if(!account || !credential || removingAccountsRef.current.has(account.id))throw new Error('ACCOUNT_UNAVAILABLE');
+    const generation=accountSyncGenerationRef.current[account.id];
+    const active=await ensureFreshAccountCredentials(credential);
+    if(removingAccountsRef.current.has(account.id) || generation!==accountSyncGenerationRef.current[account.id])throw new Error('ACCOUNT_CHANGED');
+    if(active!==credential)updateAccountCredentials(account.id,active);
+    mailMutationRevisionRef.current[account.id]=(mailMutationRevisionRef.current[account.id] || 0)+1;
+    const result=await safeFetchJson<{success:boolean;verified:boolean;labels:string[]}>('/api/mail/provider/label',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({config:providerMessageConfig(account,active,email),label,remove,confirm:true})})
+      .finally(()=>{mailMutationRevisionRef.current[account.id]=(mailMutationRevisionRef.current[account.id] || 0)+1;});
+    if(!result.success || !result.verified || !Array.isArray(result.labels))throw new Error('LABEL_UNCONFIRMED');
+    if(removingAccountsRef.current.has(account.id) || generation!==accountSyncGenerationRef.current[account.id])return;
+    setEmails(prev=>prev.map(item=>item.accountId===account.id && item.id===email.id?{...item,providerLabels:result.labels}:item));
+    setDetailEmail(prev=>prev?.accountId===account.id && prev.id===email.id?{...prev,providerLabels:result.labels}:prev);
+  };
+  const handleProviderLabel=(email:EmailMessage,label:string,remove:boolean)=>setConfirmModal({isOpen:true,title:t(remove?'workflow.removeProviderLabel':'workflow.addProviderLabel'),
+    description:`${accounts.find(account=>account.id===email.accountId)?.email || ''} · ${email.folder} · ${email.subject} → ${label}`,confirmLabel:t('workflow.labelConfirm'),itemCount:1,
+    action:()=>applyProviderLabel(email,label,remove)});
   const handleSyncGmailLabels = async () => {
-    setIsSyncingLabels(true);
-    try {
-      const safeCategorized = emails.filter((e) => e.safeCategory);
-      showToast(`${safeCategorized.length} adet ileti akıllı kategorilere senkronize edildi.`, 'success');
-    } catch (err: any) {
-      console.error('Kategori senkronizasyon hatası:', err);
-      showToast('Kategori senkronizasyonu sırasında hata oluştu.', 'error');
-    } finally {
-      setIsSyncingLabels(false);
-    }
+    if(isSyncingLabels)return;
+    const targets=filteredEmails.filter(email=>email.safeCategory && email.uid && !['drafts','trash','sent'].includes(email.folderType || ''));
+    if(!targets.length){showToast(t('workflow.noLabelTargets'),'info');return;}
+    setConfirmModal({isOpen:true,title:t('workflow.providerLabels'),description:t('workflow.labelPreview',{count:targets.length}),confirmLabel:t('workflow.labelConfirm'),itemCount:targets.length,
+      action:async()=>{
+        setIsSyncingLabels(true);
+        try{
+          const result=await executeConfirmedMailBatch(targets,email=>applyProviderLabel(email,email.provider==='gmail'?`Sift/${email.safeCategory}`:`Sift_${email.safeCategory}`,false),()=>{});
+          showToast(t('workflow.labelBatch',{completed:result.completed.length,remaining:result.remaining.length}),result.remaining.length?'error':'success');
+        }finally{setIsSyncingLabels(false);}
+      }});
   };
 
   // Manual category update for an email
@@ -998,8 +1083,9 @@ export default function App() {
       confirmLabel: 'Çöpe Taşı',
       itemCount: 1,
       action: async () => {
-        await performRemoteMailAction(email, 'trash');
-        setEmails((prev) => prev.map((e) => e.id === email.id ? {...e, folderType:'trash'} : e));
+        const moved=await performRemoteMailAction(email, 'trash');
+        // MOVE changes folder identity/UID. Remove the verified source; background sync loads the destination.
+        setEmails((prev) => relocateVerifiedMessage(prev,email,moved.destination || '','trash'));
         setSelectedEmailIds((prev) => {
           const next = new Set(prev);
           next.delete(email.id);
@@ -1015,8 +1101,9 @@ export default function App() {
 
   // Batch Trash
   const trashConfirmedBatch = async (messages: EmailMessage[]) => {
-    const result = await executeConfirmedMailBatch(messages, email => performRemoteMailAction(email, 'trash'), email => {
-      setEmails(prev => prev.map(item => item.id === email.id ? { ...item, folderType: 'trash' } : item));
+    const destinations=new Map<string,string>();
+    const result = await executeConfirmedMailBatch(messages, async email => {const result=await performRemoteMailAction(email, 'trash');destinations.set(JSON.stringify([email.accountId,email.id]),result.destination || '');}, email => {
+      setEmails(prev => relocateVerifiedMessage(prev,email,destinations.get(JSON.stringify([email.accountId,email.id])) || '','trash'));
       setSelectedEmailIds(prev => { const next = new Set(prev); next.delete(email.id); return next; });
       setDetailEmail(prev => prev?.id === email.id ? null : prev);
     });
@@ -1078,8 +1165,8 @@ export default function App() {
       return;
     }
 
-    const opened = selectedList.filter(item => handleUnsubscribe(item)).length;
-    showToast(t('mailActions.unsubscribeBatch', { count: opened }), 'info');
+    setConfirmModal({isOpen:true,title:t('actions.unsubscribe'),description:t('workflow.unsubscribePreview',{count:selectedList.length}),confirmLabel:t('actions.unsubscribe'),itemCount:selectedList.length,
+      action:async()=>{const opened=selectedList.filter(item=>handleUnsubscribe(item)).length;showToast(t('mailActions.unsubscribeBatch',{count:opened}),'info');}});
   };
 
   // Mark as safe override
@@ -1204,13 +1291,7 @@ export default function App() {
       }
 
       // Search filter
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchFrom = email.from.toLowerCase().includes(q);
-        const matchSubject = email.subject.toLowerCase().includes(q);
-        const matchSnippet = email.snippet.toLowerCase().includes(q);
-        if (!matchFrom && !matchSubject && !matchSnippet) return false;
-      }
+      if (searchQuery.trim() && !matchesMailSearch(email,searchQuery)) return false;
 
       if (activeLabel && !email.labels?.includes(`user:${activeLabel}`)) return false;
 
@@ -1289,7 +1370,7 @@ export default function App() {
         if (!mailbox) continue;
         const offset = emails.filter(e => e.accountId === account.id && e.folder === mailbox.path).length;
         if (offset >= (mailbox.totalMessages || 0)) continue;
-        const activeCredentials = await ensureFreshMicrosoftCredentials(accountCredentials);
+        const activeCredentials = await ensureFreshAccountCredentials(accountCredentials);
         if (activeCredentials !== accountCredentials) updateAccountCredentials(account.id, activeCredentials);
         const result = await syncEmailsFromBackend({...activeCredentials, accountId: account.id, folder: mailbox.path, offset, maxResults: pageSize});
         if (!mailViewGuardRef.current.isCurrent(generation) || activeAccountId !== requestedAccountId || mailboxType !== requestedMailboxType) return false;
@@ -1453,7 +1534,8 @@ export default function App() {
               )}
               {syncError && <p role="alert" className="text-sm text-rose-500">{syncError}</p>}
               <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-zinc-500 rounded-xl bg-zinc-500/[.06] px-3 py-2">
-                <span>{['inbox','sent','threats'].includes(activeTab) ? t('actions.loadedCount',{loaded:folderLoaded,total:folderTotal}) : t('actions.loaded',{count:filteredEmails.length})}</span>
+                <span title={t('workflow.searchScope')}>{searchQuery.trim()?t('workflow.searchScope'):['inbox','sent','threats','drafts','trash','archive'].includes(activeTab) ? t('actions.loadedCount',{loaded:folderLoaded,total:folderTotal}) : t('actions.loaded',{count:filteredEmails.length})}</span>
+                {filteredEmails.some(email=>email.safeCategory && email.uid) && <button disabled={isSyncingLabels} onClick={()=>void handleSyncGmailLabels()} className="text-xs px-2 py-1 theme-hover rounded">{t('workflow.syncProviderLabels')}</button>}
                 <div className="flex items-center gap-2"><label className="text-xs">{t('pagination.perPage')} <select aria-label={t('pagination.perPage')} value={pageSize} onChange={e=>setAppearance({pageSize:Number(e.target.value) as 10|20|50|100})} className="ml-1 rounded-lg bg-zinc-500/10 px-2 py-1.5">{[10,20,50,100].map(n=><option key={n} value={n}>{n}</option>)}</select></label><span className="text-xs opacity-60">{filteredEmails.length?`${(safeCurrentPage-1)*pageSize+1}–${Math.min(safeCurrentPage*pageSize,filteredEmails.length)} / ${Math.max(filteredEmails.length,folderTotal)}`:'0'}</span></div>
               </div>
               {/* Action Toolbar */}
@@ -1600,6 +1682,10 @@ export default function App() {
         onMarkSafe={handleMarkSafe}
         onReply={handleReplyEmail}
         onForward={(email)=>{setComposeForwardEmail(email);setIsComposeOpen(true)}}
+        threadMessages={detailEmail?relatedThread(detailEmail,emails):[]}
+        onSelectThread={handleOpenDetail}
+        onContinueDraft={email=>void continueProviderDraft(email)}
+        onProviderLabel={handleProviderLabel}
         onUpdateCategory={handleUpdateCategory}
         onAddRule={handleAddRule}
         onUnsubscribeAndPurge={handleUnsubscribeAndPurge}
@@ -1615,9 +1701,11 @@ export default function App() {
         isOpen={isRulesModalOpen}
         onClose={() => setIsRulesModalOpen(false)}
         rules={autoRules}
+        accounts={accounts}
         onAddRule={handleAddRule}
         onToggleRule={handleToggleRule}
         onDeleteRule={handleDeleteRule}
+        onScopeChange={(id,accountIds,folderTypes)=>setAutoRules(prev=>prev.map(rule=>rule.id===id?{...rule,accountIds,folderTypes}:rule))}
         autoWatcherEnabled={autoWatcherEnabled}
         onToggleAutoWatcher={setAutoWatcherEnabled}
       />
@@ -1648,7 +1736,7 @@ export default function App() {
         onClose={() => setIsMultiAccountModalOpen(false)}
         accounts={accounts}
         onConnect={handleLoginAndSync}
-        onRemoveAccount={handleRemoveAccount}
+        onRemoveAccount={handleRequestRemoveAccount}
         onSelectAccount={(accId) => {
           handleAccountChange(accId);
           setIsMultiAccountModalOpen(false);
@@ -1677,6 +1765,13 @@ export default function App() {
 
       {/* Global Settings Modal (Appearance, Privacy, Vault, Automation, Desktop, General) */}
       <SettingsModal
+        onPrepareDataTransfer={async()=>{
+          if(!mailCacheLoaded||isSyncingEmails||removingAccountsRef.current.size) throw new Error('Mail data is not ready for backup.');
+          mailDataTransferRef.current=true;
+          await mailCacheWriteRef.current;
+          await saveLocalMailSnapshot(mailSnapshot(emailsRef.current,composeDraft,replyDrafts,accounts,userLabels,autoRules));
+        }}
+        onCompleteDataTransfer={()=>{mailDataTransferRef.current=false;setMailPersistenceRevision(v=>v+1);}}
         isOpen={isSettingsModalOpen}
         onClose={() => setIsSettingsModalOpen(false)}
         onOpenVaultModal={() => setIsVaultModalOpen(true)}
@@ -1774,9 +1869,10 @@ export default function App() {
         theme={theme}
         availableEmails={emails}
         initialForward={composeForwardEmail}
-        onSent={({to,subject,body,bodyHtml,accountId}) => {
-          const account=accounts.find(a=>a.id===accountId);
-          setEmails(prev=>[{id:`sent-${Date.now()}`,accountId,provider:account?.provider,from:account?.email||'',fromEmail:account?.email||'',to:[to],subject,date:new Date().toISOString(),snippet:body.slice(0,160),bodyText:body,bodyHtml,isRead:true,folder:'Sent',folderType:'sent',labels:['SENT']},...prev]);
+        onSent={({to,cc,subject,body,bodyHtml,accountId,messageId}) => {
+          const account=accountsRef.current.find(a=>a.id===accountId);
+          if(!account || removingAccountsRef.current.has(accountId))return;
+          setEmails(prev=>[{id:`sent-${crypto.randomUUID()}`,accountId,provider:account?.provider,from:account?.email||'',fromEmail:account?.email||'',to:mailAddresses([to]),cc:mailAddresses([cc || '']),messageId,pendingSent:true,subject,date:new Date().toISOString(),snippet:body.slice(0,160),bodyText:body,bodyHtml,isRead:true,folder:'Sent',folderType:'sent',labels:['SENT']},...prev]);
           showToast(t('ui.compose.sent'), 'success');
         }}
       />
@@ -1792,6 +1888,13 @@ export default function App() {
         activeAccountId={activeAccountId === 'all' ? (accounts[0]?.id || '') : activeAccountId}
         credentialsByAccount={credentialsByAccount}
         onCredentialsUpdated={updateAccountCredentials}
+        onSent={({accountId,to,cc,subject,body,messageId,references,inReplyTo})=>{
+          const account=accountsRef.current.find(item=>item.id===accountId);
+          if(!account || removingAccountsRef.current.has(accountId))return;
+          setEmails(prev=>[{id:`sent-${crypto.randomUUID()}`,accountId,messageId,pendingSent:true,provider:account.provider,
+            from:account.email,fromEmail:account.email,to:mailAddresses([to]),cc:mailAddresses([cc]),subject,bodyText:body,snippet:body.slice(0,160),
+            references,inReplyTo,date:new Date().toISOString(),isRead:true,folder:'Sent',folderType:'sent',labels:['SENT']},...prev]);
+        }}
         onOpenAssistantForPolish={(draftText) => {
           setIsReplyModalOpen(false);
           if (replyModalEmail) {

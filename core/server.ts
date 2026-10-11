@@ -9,6 +9,10 @@ import {
   getVaultSummary,
 } from "./security/vault";
 import { loadLocalMailSnapshot, saveLocalMailSnapshot } from "./security/mailStore";
+import { createLocalMailRouter } from './routes/localMail';
+import { createProviderMailRouter } from './routes/providerMail';
+import {saveProviderSentCopy} from './mail/providerWorkflows';
+import { removeLocalAccount } from './security/accountCleanup';
 import {
   testImapConnection,
   fetchImapMessages,
@@ -45,6 +49,7 @@ import {
   validateBody,
   VaultSaveSchema,
   LocalMailSnapshotSchema,
+  AccountRemovalSchema,
   ImapConnectSchema,
   ImapFetchSchema,
   ImapActionSchema,
@@ -65,6 +70,8 @@ import {
 } from "./security/validation";
 import { createPluginManager } from "./plugins";
 import { createAiRouter } from "./routes/ai";
+import { createAccountRouter } from './routes/accounts';
+import { refreshAccountToken } from './auth/accountService';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -100,7 +107,7 @@ const corsOptions: cors.CorsOptions = {
     }
 
     // STRICT: Reject all unauthorized origins (no permissive fallback)
-    console.warn(`[Sift CORS Security] Yetkisiz origin engellendi: ${origin}`);
+    console.warn('[Sift CORS Security] ORIGIN_REJECTED');
     return callback(new Error("CORS isteği engellendi: Yetkisiz origin adresi."));
   },
   credentials: true,
@@ -124,7 +131,10 @@ app.use("/api", generalApiLimiter);
 
 // Handshake endpoint for local frontend / Electron clients to receive session authorization token
 app.get("/api/auth/session", (req, res) => {
-  if (!isLocalSessionRequest(req.socket.remoteAddress, req.headers.host)) {
+  res.setHeader('Cache-Control', 'no-store');
+  const origin = req.headers.origin;
+  const sameOrigin = !origin || origin === `http://${req.headers.host}` || origin === `https://${req.headers.host}`;
+  if (!isLocalSessionRequest(req.socket.remoteAddress, req.headers.host) || !sameOrigin) {
     return res.status(403).json({ success: false, error: 'Yerel oturum anahtarı yalnızca bu cihazda kullanılabilir.' });
   }
   res.json({
@@ -134,15 +144,27 @@ app.get("/api/auth/session", (req, res) => {
 });
 
 // Mail bodies and drafts are device-local, encrypted at rest and never served to remote clients.
+app.use(createLocalMailRouter());
+app.use(createProviderMailRouter());
 app.get('/api/local/mail-cache', sensitiveApiLimiter, requireApiToken, (req, res) => {
+  res.setHeader('Cache-Control','no-store');
   if (!isLocalSessionRequest(req.socket.remoteAddress, req.headers.host)) return res.status(403).json({ success: false, error: 'Yerel posta verisi yalnızca bu cihazda açılabilir.' });
   try { res.json({ success: true, snapshot: loadLocalMailSnapshot() }); }
   catch { res.status(500).json({ success: false, error: 'Yerel posta verisi açılamadı; mevcut dosya korunuyor.' }); }
 });
 app.post('/api/local/mail-cache', sensitiveApiLimiter, requireApiToken, validateBody(LocalMailSnapshotSchema), (req, res) => {
+  res.setHeader('Cache-Control','no-store');
   if (!isLocalSessionRequest(req.socket.remoteAddress, req.headers.host)) return res.status(403).json({ success: false, error: 'Yerel posta verisi yalnızca bu cihazda kaydedilebilir.' });
   try { saveLocalMailSnapshot(req.body.snapshot); res.json({ success: true }); }
   catch { res.status(500).json({ success: false, error: 'Yerel posta verisi kaydedilemedi; önceki dosya korunuyor.' }); }
+});
+
+// Health check endpoint
+app.post('/api/local/accounts/remove', sensitiveApiLimiter, requireApiToken, validateBody(AccountRemovalSchema), (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  if (!isLocalSessionRequest(req.socket.remoteAddress, req.headers.host)) return res.status(403).json({ success: false, error: 'Hesap verisi yalnızca bu cihazda kaldırılabilir.' });
+  try { removeLocalAccount(req.body.accountId, req.body.email); res.json({ success: true }); }
+  catch { res.status(500).json({ success: false, error: 'Hesabın yerel verileri temizlenemedi. Kaldırma işlemini yeniden deneyin.' }); }
 });
 
 // Health check endpoint
@@ -159,17 +181,17 @@ app.get("/api/vault", sensitiveApiLimiter, requireApiToken, (req, res) => {
     const summary = getVaultSummary();
     res.json(summary);
   } catch (err: any) {
-    res.status(500).json({ error: "Kasa bilgileri okunamadı", details: err.message });
+    res.status(500).json({ error: "Kasa bilgileri okunamadı" });
   }
 });
 
 app.post("/api/vault/save", sensitiveApiLimiter, requireApiToken, validateBody(VaultSaveSchema), (req, res) => {
   try {
-    const { key, value, category, label } = req.body;
-    saveVaultSecret(key, value, category, label);
+    const { key, value, category, label, accountEmail } = req.body;
+    saveVaultSecret(key, value, category, label, accountEmail);
     res.json({ success: true, message: "Veri AES-256-GCM ile yerel diske güvenle kaydedildi" });
   } catch (err: any) {
-    res.status(500).json({ error: "Kasa kaydetme hatası", details: err.message });
+    res.status(500).json({ error: "Kasa kaydetme hatası" });
   }
 });
 
@@ -179,7 +201,7 @@ app.delete("/api/vault/:key", sensitiveApiLimiter, requireApiToken, (req, res) =
     const removed = deleteVaultSecret(key);
     res.json({ success: removed });
   } catch (err: any) {
-    res.status(500).json({ error: "Kasa silme hatası", details: err.message });
+    res.status(500).json({ error: "Kasa silme hatası" });
   }
 });
 
@@ -193,7 +215,7 @@ app.post("/api/imap/test", sensitiveApiLimiter, requireApiToken, validateBody(Im
     const result = await testImapConnection({ host, port: Number(port) || 993, secure: secure ?? true, auth });
     res.json(result);
   } catch (err: any) {
-    res.status(500).json({ success: false, message: err.message || "IMAP testi başarısız" });
+    res.status(500).json({ success: false, message: formatImapError(err, req.body.host) });
   }
 });
 
@@ -201,12 +223,12 @@ app.post("/api/imap/fetch", sensitiveApiLimiter, requireApiToken, validateBody(I
   try {
     const { host, port, secure, auth, maxResults } = req.body;
     const result = await fetchImapMessages(
-      { host, port: Number(port) || 993, secure: secure ?? true, auth },
+      { ...req.body, host, port: Number(port) || 993, secure: secure ?? true, auth },
       maxResults || 15
     );
     res.json(result);
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message || "IMAP iletileri alınamadı" });
+    res.status(500).json({ success: false, error: formatImapError(err, req.body.host) });
   }
 });
 app.post("/api/imap/action", sensitiveApiLimiter, requireApiToken, validateBody(ImapActionSchema), async (req, res) => {
@@ -308,7 +330,7 @@ const handleEmailSync = async (req: express.Request, res: express.Response) => {
     const folder = req.body?.folder ? String(req.body.folder).trim() : undefined;
     const accountId = req.body?.accountId ? String(req.body.accountId).trim() : undefined;
 
-    console.log(`[Dynamic IMAP Sync] ${user} için ${host}:${port} (${folder || 'Tüm Klasörler'}) senkronize ediliyor...`);
+    console.log('[Sift Mail] IMAP_SYNC_STARTED');
 
     // 3. IMAP Bağlantısı ve İleti Çekimi
     const result = await fetchImapMessages(
@@ -319,7 +341,8 @@ const handleEmailSync = async (req: express.Request, res: express.Response) => {
         auth: { user, pass: host === 'imap.gmail.com' ? pass.replace(/\s+/g, '') : pass, accessToken },
         folder,
         offset: Math.max(0, Math.floor(Number(req.body?.offset) || 0)),
-        sinceUid: req.body?.sinceUid ? Math.max(1, Math.floor(Number(req.body.sinceUid))) : undefined,
+        sinceUid: req.body?.sinceUid !== undefined ? Number(req.body.sinceUid) : undefined,
+        knownUids: req.body?.knownUids,
         expectedUidValidity: req.body?.expectedUidValidity ? String(req.body.expectedUidValidity) : undefined,
         accountId,
       },
@@ -327,11 +350,12 @@ const handleEmailSync = async (req: express.Request, res: express.Response) => {
     );
 
     if (!result.success) {
-      console.warn(`[IMAP Sync Failed] ${user}: ${result.error}`);
-      const retryable = /(?:timeout|timed out|econn|socket|connection (?:closed|lost|reset)|temporar|unavailable|network)/i.test(result.error || '');
+      console.warn('[Sift Mail] IMAP_SYNC_FAILED');
+      const retryable = result.retryable ?? /(?:timeout|timed out|econn|socket|connection (?:closed|lost|reset)|temporar|unavailable|network)/i.test(result.error || '');
       return res.status(retryable ? 503 : 200).json({
         success: false,
         retryable,
+        code: result.code,
         error: result.error || "IMAP kimlik doğrulaması başarısız. Lütfen bilgilerinizi kontrol edin.",
         hint: "Outlook için 'Microsoft ile Giriş Yap', Gmail için 16 haneli Uygulama Şifresi kullanın.",
       });
@@ -354,6 +378,7 @@ const handleEmailSync = async (req: express.Request, res: express.Response) => {
       messages: result.messages,
       mailboxes: result.mailboxes || [],
       incremental: result.incremental,
+      delta: result.delta,
       account: {
         email: user,
         provider,
@@ -362,7 +387,7 @@ const handleEmailSync = async (req: express.Request, res: express.Response) => {
       },
     });
   } catch (err: any) {
-    console.error("[IMAP Sync Error Catch]", err);
+    console.error('[Sift Mail] IMAP_SYNC_FAILED');
     return res.status(200).json({
       success: false,
       error: formatImapError(err) || "IMAP senkronizasyonu sırasında beklenmeyen hata oluştu.",
@@ -376,7 +401,15 @@ app.post("/api/emails/sync", sensitiveApiLimiter, requireApiToken, validateBody(
 // Microsoft Identity Platform OAuth 2.0 / PKCE Routes
 // ==========================================
 
+app.use(createAccountRouter());
+app.post('/api/oauth/google/refresh', sensitiveApiLimiter, requireApiToken, validateBody(MicrosoftRefreshSchema), async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try { res.json(await refreshAccountToken('google', req.body.email)); }
+  catch { res.status(500).json({ success: false, code: 'CONNECTION_FAILED', error: 'Google oturumu yenilenemedi.' }); }
+});
+
 app.get("/api/oauth/microsoft/auth-url", sensitiveApiLimiter, requireApiToken, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
   try {
     const redirectUri =
       (req.query.redirectUri as string) || `http://localhost:${PORT}/oauth/microsoft/callback`;
@@ -394,6 +427,7 @@ app.post(
   requireApiToken,
   validateBody(MicrosoftCallbackSchema),
   async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
     try {
       const { code, state, redirectUri, codeVerifier, customClientId } = req.body;
       const tokenResult = await exchangeMicrosoftCode({
@@ -416,56 +450,16 @@ app.post(
   requireApiToken,
   validateBody(MicrosoftRefreshSchema),
   async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
     try {
       const { email, customClientId } = req.body;
-      const refreshResult = await refreshMicrosoftToken(email, customClientId);
+      const refreshResult = customClientId ? await refreshMicrosoftToken(email, customClientId) : await refreshAccountToken('microsoft', email);
       res.json(refreshResult);
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
   }
 );
-
-// HTML Callback Handler for Microsoft OAuth Popup
-app.get("/oauth/microsoft/callback", (req, res) => {
-  const code = req.query.code || "";
-  const state = req.query.state || "";
-  const error = req.query.error || "";
-  const errorDescription = req.query.error_description || "";
-  const scriptValue = (value: unknown) => JSON.stringify(value).replace(/</g, '\\u003c');
-
-  res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.send(`<!DOCTYPE html>
-<html>
-<head>
-  <title>Microsoft Girişi Tamamlandı</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #0f172a; color: #f8fafc; text-align: center; }
-    .box { background: #1e293b; padding: 2.5rem; border-radius: 1.5rem; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); max-width: 420px; }
-    h2 { font-size: 1.25rem; margin-bottom: 0.5rem; }
-    p { font-size: 0.875rem; color: #94a3b8; }
-  </style>
-</head>
-<body>
-  <div class="box">
-    <h2>Microsoft Hesabı Doğrulandı</h2>
-    <p>Oturum açma bilgileri güvenle Sift istemcisine aktarılıyor, pencere otomatik kapanacaktır...</p>
-  </div>
-  <script>
-    const payload = {
-      type: 'MS_OAUTH_CALLBACK',
-      code: ${scriptValue(code)},
-      state: ${scriptValue(state)},
-      error: ${scriptValue(error)},
-      errorDescription: ${scriptValue(errorDescription)}
-    };
-    const channel = new BroadcastChannel('sift-microsoft-oauth');
-    channel.postMessage(payload);
-    setTimeout(() => { channel.close(); window.close(); }, 1000);
-  </script>
-</body>
-</html>`);
-});
 
 // ==========================================
 // AI Provider Configuration & Health Routes
@@ -564,7 +558,7 @@ app.post("/api/telegram/config", sensitiveApiLimiter, requireApiToken, validateB
     const result = await setupTelegramBot(token || "", chatId || "");
     res.json(result);
   } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: 'SMTP gönderme işlemi tamamlanamadı.' });
   }
 });
 
@@ -595,12 +589,18 @@ app.post("/api/smtp/send", sensitiveApiLimiter, requireApiToken, validateBody(Sm
 
     const result = await sendSmtpMessage(config, mail);
     if (result.success) {
-      res.json(result);
+      let sentCopy:'saved'|'failed'|'not_requested'='not_requested';
+      if(req.body.sentConfig){
+        try{await saveProviderSentCopy(req.body.sentConfig,mail,result.messageId || '');sentCopy='saved';}
+        catch{sentCopy='failed';}
+      }
+      // A Sent-copy failure must never turn delivery into a failed/retryable send.
+      res.json({...result,sentCopy});
     } else {
       res.status(500).json(result);
     }
   } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: 'SMTP işlemi doğrulanamadı. Yeniden göndermeden önce Gönderilenler klasörünü kontrol edin.' });
   }
 });
 

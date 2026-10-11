@@ -16,6 +16,9 @@ import { safeFetchJson, extractErrorMessage } from '../services/apiClient';
 import { detectMailProvider } from '../../core/mail/providerManager';
 import { DynamicSyncCredentials, ensureFreshMicrosoftCredentials } from '../services/mailSyncService';
 import type { ReplyDraft } from '../services/localMailStore';
+import {replyRecipients,replyReferences,messageReferences} from '../../core/mail/workflows';
+import {useTranslation} from 'react-i18next';
+import {providerMailConfig} from '../services/providerMail';
 
 interface EmailReplyModalProps {
   isOpen: boolean;
@@ -30,6 +33,7 @@ interface EmailReplyModalProps {
   onCredentialsUpdated?: (accountId: string, credentials: DynamicSyncCredentials) => void;
   onSuccess?: (sentEmailId: string) => void;
   onSuccessSent?: (sentEmailId: string) => void;
+  onSent?: (data:{accountId:string;to:string;cc:string;subject:string;body:string;messageId?:string;references:string[];inReplyTo?:string})=>void;
   onOpenAssistantForPolish?: (draftText?: string) => void;
   theme?: AppTheme;
 }
@@ -47,13 +51,17 @@ export const EmailReplyModal: React.FC<EmailReplyModalProps> = ({
   onCredentialsUpdated,
   onSuccess,
   onSuccessSent,
+  onSent,
   onOpenAssistantForPolish,
   theme = 'light',
 }) => {
+  const {t}=useTranslation();
   const isOled = theme === 'oled';
   const isDark = theme !== 'light';
 
   const [toAddress, setToAddress] = useState('');
+  const [ccAddress,setCcAddress]=useState('');
+  const [replyAll,setReplyAll]=useState(false);
   const [subject, setSubject] = useState('');
   const [bodyText, setBodyText] = useState('');
   const [selectedAccountId, setSelectedAccountId] = useState(activeAccountId);
@@ -68,7 +76,10 @@ export const EmailReplyModal: React.FC<EmailReplyModalProps> = ({
       openedEmailId.current = email.id;
       skipDraftWrite.current = true;
       setSelectedAccountId(savedDraft?.accountId || email.accountId || activeAccountId);
-      setToAddress(savedDraft?.to || email.fromEmail || email.from || '');
+      const recipients=replyRecipients(email,accounts.map(account=>account.email),savedDraft?.replyAll || false);
+      setToAddress(savedDraft?.to || recipients.to);
+      setCcAddress(savedDraft?.cc || recipients.cc);
+      setReplyAll(savedDraft?.replyAll || false);
       setSubject(savedDraft?.subject || (email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject || ''}`));
       setBodyText(initialDraft || savedDraft?.body || '');
       setStatusMessage(null);
@@ -81,14 +92,17 @@ export const EmailReplyModal: React.FC<EmailReplyModalProps> = ({
     const defaultTo = email.fromEmail || email.from || '';
     const defaultSubject = email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject || ''}`;
     const changed = bodyText.trim() || toAddress !== defaultTo || subject !== defaultSubject;
-    onDraftChange(email.id, changed ? { accountId: selectedAccountId, to: toAddress, subject, body: bodyText } : null);
-  }, [isOpen, email, selectedAccountId, toAddress, subject, bodyText, onDraftChange]);
+    onDraftChange(email.id, changed || ccAddress || replyAll ? { accountId: selectedAccountId, to: toAddress, cc:ccAddress,replyAll,subject, body: bodyText } : null);
+  }, [isOpen, email, selectedAccountId, toAddress, ccAddress,replyAll,subject, bodyText, onDraftChange]);
+
+  useEffect(()=>{if(!isOpen)return;const close=(event:KeyboardEvent)=>{if(event.key==='Escape' && !isSending)onClose();};window.addEventListener('keydown',close);return()=>window.removeEventListener('keydown',close);},[isOpen,isSending,onClose]);
 
   if (!isOpen || !email) return null;
 
   const activeAccount = accounts.find((a) => a.id === selectedAccountId) || accounts[0];
 
   const handleSend = async () => {
+    if(isSending)return;
     if (!toAddress.trim() || !bodyText.trim()) {
       setStatusMessage({ type: 'error', text: 'Alıcı adresi ve yanıt metni zorunludur.' });
       return;
@@ -110,7 +124,7 @@ export const EmailReplyModal: React.FC<EmailReplyModalProps> = ({
       const userAuth = imapCfg.username || activeCredentials.email;
       const passAuth = activeCredentials.password;
 
-      await safeFetchJson('/api/smtp/send', {
+      const result=await safeFetchJson<{success:boolean;messageId?:string;partial?:boolean;rejected?:string[];sentCopy?:string}>('/api/smtp/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -122,23 +136,30 @@ export const EmailReplyModal: React.FC<EmailReplyModalProps> = ({
           },
           mail: {
             to: toAddress,
+            cc: ccAddress || undefined,
             subject: subject,
             text: bodyText,
-            inReplyTo: email.messageId,
+            inReplyTo: messageReferences([email.messageId || ''])[0],
+            references: replyReferences(email),
           },
+          sentConfig:activeAccount.provider==='imap'?providerMailConfig(activeAccount,activeCredentials):undefined,
         }),
       });
 
+      if(!result.success)throw new Error(t('compose.error'));
+      onSent?.({accountId:selectedAccountId,to:toAddress,cc:ccAddress,subject,body:bodyText,messageId:result.messageId,references:replyReferences(email),inReplyTo:email.messageId});
+      if(result.partial){setToAddress((result.rejected || []).join(', '));setCcAddress('');setStatusMessage({type:'error',text:t('workflow.partialSend')});return;}
+      if(result.sentCopy==='failed')window.alert(t('workflow.sentCopyFailed'));
       setStatusMessage({ type: 'success', text: 'E-posta yanıtı başarıyla gönderildi!' });
       onDraftChange?.(email.id, null);
-      if (onSuccess) onSuccess(email.id);
-      if (onSuccessSent) onSuccessSent(email.id);
+      if (onSuccess) onSuccess(result.messageId || '');
+      if (onSuccessSent) onSuccessSent(result.messageId || '');
 
       setTimeout(() => {
         onClose();
       }, 1200);
     } catch (err: any) {
-      console.error('Email send error:', err);
+      console.error('[Sift Mail] REPLY_SEND_FAILED');
       setStatusMessage({
         type: 'error',
         text: extractErrorMessage(err, 'E-posta gönderilirken bir sorun oluştu.'),
@@ -191,6 +212,7 @@ export const EmailReplyModal: React.FC<EmailReplyModalProps> = ({
             <div className="flex items-center gap-2 text-xs">
               <span className="w-16 font-semibold opacity-60 shrink-0">Gönderen:</span>
               <select
+                disabled={isSending}
                 value={selectedAccountId}
                 onChange={(e) => setSelectedAccountId(e.target.value)}
                 className={`flex-1 px-2.5 py-1.5 rounded-lg border text-xs font-medium ${inputBg}`}
@@ -209,8 +231,9 @@ export const EmailReplyModal: React.FC<EmailReplyModalProps> = ({
               <div className="flex-1 flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs font-medium font-mono">
                 <User className="w-3.5 h-3.5 opacity-50 shrink-0" />
                 <input
-                  type="email"
+                  type="text"
                   value={toAddress}
+                  disabled={isSending}
                   onChange={(e) => setToAddress(e.target.value)}
                   className="flex-1 bg-transparent border-0 outline-none"
                   placeholder="alici@ornek.com"
@@ -219,11 +242,16 @@ export const EmailReplyModal: React.FC<EmailReplyModalProps> = ({
             </div>
 
             {/* Subject */}
+            <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={replyAll} disabled={isSending} onChange={event=>{
+              const all=event.target.checked;setReplyAll(all);const recipients=replyRecipients(email,accounts.map(account=>account.email),all);setToAddress(recipients.to);setCcAddress(recipients.cc);
+            }}/>{t('workflow.replyAll')}</label>
+            <label className="flex items-center gap-2 text-xs"><span className="w-16">Cc</span><input aria-label="Cc" value={ccAddress} disabled={isSending} onChange={event=>setCcAddress(event.target.value)} className={`flex-1 px-2.5 py-1.5 rounded-lg border ${inputBg}`}/></label>
             <div className="flex items-center gap-2 text-xs">
               <span className="w-16 font-semibold opacity-60 shrink-0">Konu:</span>
               <input
                 type="text"
                 value={subject}
+                disabled={isSending}
                 onChange={(e) => setSubject(e.target.value)}
                 className={`flex-1 px-2.5 py-1.5 rounded-lg border text-xs font-semibold ${inputBg}`}
                 placeholder="Konu başlığı"
@@ -248,6 +276,7 @@ export const EmailReplyModal: React.FC<EmailReplyModalProps> = ({
               <textarea
                 rows={10}
                 value={bodyText}
+                disabled={isSending}
                 onChange={(e) => setBodyText(e.target.value)}
                 placeholder="Yanıtınızı buraya yazın veya AI Asistan'ın hazırladığı taslağı düzenleyin..."
                 className={`w-full p-3 rounded-xl border text-xs leading-relaxed font-sans resize-none focus:ring-1 focus:ring-emerald-500 outline-none ${inputBg}`}

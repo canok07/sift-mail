@@ -8,6 +8,8 @@ import { safeFetchJson } from '../services/apiClient';
 import { composeHtmlToText, safeComposeLink, sanitizeComposeHtml, textToComposeHtml } from '../services/composeFormatting';
 import type { ComposeDraft } from '../services/localMailStore';
 import { AppTheme } from '../stores/useSettingsStore';
+import {providerMailConfig} from '../services/providerMail';
+import {messageReferences} from '../../core/mail/workflows';
 
 type Attachment = ComposeDraft['attachments'][number];
 interface Props {
@@ -16,7 +18,7 @@ interface Props {
   accounts: ConnectedAccount[]; contacts: string[]; credentials: Record<string, DynamicSyncCredentials>;
   onCredentialsUpdated?: (accountId: string, credentials: DynamicSyncCredentials) => void;
   theme: AppTheme; availableEmails?: EmailMessage[]; initialForward?: EmailMessage | null;
-  onSent: (data: { to: string; subject: string; body: string; bodyHtml: string; accountId: string }) => void;
+  onSent: (data: { to: string; cc?:string;subject: string; body: string; bodyHtml: string; accountId: string;messageId?:string }) => void;
 }
 const MAX_TOTAL = 25 * 1024 * 1024;
 const bytesToBase64 = (bytes: Uint8Array) => {
@@ -29,6 +31,7 @@ export const ComposeModal: React.FC<Props> = ({ isOpen, onClose, draft, onDraftC
   const [accountId, setAccountId] = useState('');
   const [to, setTo] = useState(''), [cc, setCc] = useState(''), [bcc, setBcc] = useState('');
   const [subject, setSubject] = useState(''), [body, setBody] = useState(''), [bodyHtml, setBodyHtml] = useState('');
+  const [replyHeaders,setReplyHeaders]=useState<{inReplyTo?:string;references?:string[]}>({});
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [showCc, setShowCc] = useState(false), [showMailPicker, setShowMailPicker] = useState(false);
   const [expanded, setExpanded] = useState(false), [minimized, setMinimized] = useState(false);
@@ -47,9 +50,11 @@ export const ComposeModal: React.FC<Props> = ({ isOpen, onClose, draft, onDraftC
     setAccountId(draft?.accountId || accounts[0]?.id || '');
     setTo(draft?.to || ''); setCc(draft?.cc || ''); setBcc(draft?.bcc || ''); setShowCc(Boolean(draft?.cc || draft?.bcc));
     setSubject(draft?.subject || ''); setBody(draft?.body || '');
+    setReplyHeaders({inReplyTo:messageReferences([draft?.inReplyTo || ''])[0],references:messageReferences(draft?.references)});
     setBodyHtml(sanitizeComposeHtml(draft?.bodyHtml || textToComposeHtml(draft?.body || '')));
     setAttachments(draft?.attachments || []);
     if (initialForward) {
+      setReplyHeaders({});
       const forwarded = `\n\n---------- ${t('ui.compose.forwardedMessage')} ----------\n${t('compose.from')}: ${initialForward.from}\n${t('ui.compose.date')}: ${initialForward.date}\n${t('compose.subject')}: ${initialForward.subject}\n\n${initialForward.bodyText || initialForward.snippet}`;
       setSubject(initialForward.subject.startsWith('Fwd:') ? initialForward.subject : `Fwd: ${initialForward.subject}`);
       setBody(forwarded); setBodyHtml(textToComposeHtml(forwarded));
@@ -62,8 +67,8 @@ export const ComposeModal: React.FC<Props> = ({ isOpen, onClose, draft, onDraftC
   useEffect(() => {
     if (!isOpen || !onDraftChange) return;
     if (skipDraftWrite.current) { skipDraftWrite.current = false; return; }
-    onDraftChange(to || cc || bcc || subject || body || attachments.length ? { accountId, to, cc, bcc, subject, body, bodyHtml, attachments } : null);
-  }, [isOpen, accountId, to, cc, bcc, subject, body, bodyHtml, attachments, onDraftChange]);
+    onDraftChange(to || cc || bcc || subject || body || attachments.length ? { accountId, to, cc, bcc, subject, body, bodyHtml, attachments,...replyHeaders } : null);
+  }, [isOpen, accountId, to, cc, bcc, subject, body, bodyHtml, attachments,replyHeaders,onDraftChange]);
 
   const rememberSelection = () => {
     const selection = window.getSelection();
@@ -158,19 +163,40 @@ export const ComposeModal: React.FC<Props> = ({ isOpen, onClose, draft, onDraftC
       if (activeCred !== cred) onCredentialsUpdated?.(accountId, activeCred);
       const provider = detectMailProvider(account.email);
       const port = account.imapConfig?.smtpPort || activeCred.smtpPort || provider.smtpPort;
-      const result = await safeFetchJson<{ success: boolean; error?: string }>('/api/smtp/send', {
+      if(activeCred.email.trim().toLowerCase()!==account.email.trim().toLowerCase())throw new Error(t('compose.loginRequired'));
+      const result = await safeFetchJson<{ success: boolean; error?: string;messageId?:string;partial?:boolean;rejected?:string[];sentCopy?:string }>('/api/smtp/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ config: {
           host: account.imapConfig?.smtpHost || activeCred.smtpHost || provider.smtpHost, port,
           secure: account.imapConfig?.smtpSecure ?? activeCred.smtpSecure ?? port === 465,
           auth: { user: account.email, ...(activeCred.accessToken ? { accessToken: activeCred.accessToken } : { pass: activeCred.password }) },
-        }, mail: { to, cc: cc || undefined, bcc: bcc || undefined, subject, text, html, attachments: attachments.map(({ size, source, ...item }) => item) } }),
+        }, sentConfig:account.provider==='imap'?providerMailConfig(account,activeCred):undefined,
+          mail: { to, cc: cc || undefined, bcc: bcc || undefined, subject, text, html,...replyHeaders,attachments: attachments.map(({ size, source, ...item }) => item) } }),
       });
       if (!result.success) throw new Error(result.error || t('compose.error'));
-      onSent({ to, subject, body: text, bodyHtml: html, accountId }); onDraftChange?.(null); reset(); onClose();
+      onSent({ to,cc,subject, body: text, bodyHtml: html, accountId,messageId:result.messageId });
+      if(result.partial){setTo((result.rejected || []).join(', '));setCc('');setBcc('');setError(t('workflow.partialSend'));return;}
+      if(result.sentCopy==='failed')window.alert(t('workflow.sentCopyFailed'));
+      onDraftChange?.(null); reset(); onClose();
     } catch (e: any) { setError(e.message || t('compose.error')); }
     finally { setBusy(false); }
   };
   if (!isOpen) return null;
+  const saveProviderCopy=async()=>{
+    if(busy || attaching)return;
+    const account=accounts.find(item=>item.id===accountId),cred=credentials[accountId];
+    if(!account || !cred){setError(t('compose.loginRequired'));return;}
+    setBusy(true);setError('');
+    try{
+      const activeCred=await ensureFreshMicrosoftCredentials(cred);
+      if(activeCred!==cred)onCredentialsUpdated?.(accountId,activeCred);
+      const html=sanitizeComposeHtml(bodyRef.current?.innerHTML ?? bodyHtml);
+      const result=await safeFetchJson<{success:boolean}>('/api/mail/provider/draft',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+        config:providerMailConfig(account,activeCred),confirmSaveCopy:true,mail:{to,cc,bcc,subject,text:composeHtmlToText(html),html,...replyHeaders,
+          attachments:attachments.map(({size,source,...item})=>item)}})});
+      if(!result.success)throw new Error(t('workflow.draftFailed'));
+      setError(t('workflow.draftSaved'));
+    }catch{setError(t('workflow.draftFailed'));}finally{setBusy(false);}
+  };
   if (minimized) return <div data-testid="compose-minimized" className="fixed bottom-4 right-4 z-50 w-72 max-w-[calc(100vw-2rem)] theme-panel border theme-border rounded-xl shadow-2xl flex items-center gap-2 p-3"><button onClick={() => setMinimized(false)} className="flex-1 min-w-0 text-left text-sm font-semibold truncate" aria-label={t('ui.compose.restore')}>{subject || t('compose.title')}</button><button onClick={() => setMinimized(false)} aria-label={t('ui.compose.restore')} className="p-1.5 theme-hover rounded"><Maximize2 size={15}/></button><button onClick={onClose} aria-label={t('actions.close')} className="p-1.5 theme-hover rounded"><X size={16}/></button></div>;
   return <div className="fixed inset-0 z-50 bg-black/55 flex items-end sm:items-center justify-center sm:justify-end p-0 sm:p-5" data-testid="compose-modal"><div className={`${expanded ? 'w-full h-full' : 'w-full sm:w-[650px] sm:h-[76vh]'} theme-panel border theme-border flex flex-col shadow-2xl sm:rounded-2xl overflow-hidden`}>
     <header className="theme-elevated flex items-center justify-between px-4 py-3 border-b theme-border"><h2 className="text-sm font-semibold">{t('compose.title')}</h2><div className="flex gap-1"><button aria-label={t('compose.minimize')} onClick={() => setMinimized(true)} className="p-1.5 theme-hover rounded"><Minimize2 size={15}/></button><button aria-label={t('compose.expand')} onClick={() => setExpanded(!expanded)} className="p-1.5 theme-hover rounded"><Maximize2 size={15}/></button><button aria-label={t('actions.close')} onClick={onClose} className="p-1.5 theme-hover rounded"><X size={16}/></button></div></header>
@@ -186,6 +212,7 @@ export const ComposeModal: React.FC<Props> = ({ isOpen, onClose, draft, onDraftC
     {showLink && <div className="px-4 py-2 flex gap-2"><input aria-label={t('ui.compose.linkUrl')} value={linkUrl} onChange={e => setLinkUrl(e.target.value)} placeholder="https://example.com" className="flex-1"/><button className="btn" onClick={() => { const href = safeComposeLink(linkUrl); if (!href) { setError(t('ui.compose.invalidLink')); return; } format('a', href); setShowLink(false); setLinkUrl(''); setError(''); }}>{t('ui.compose.insertLink')}</button></div>}
     {attachments.length > 0 && <div className="px-4 py-2 flex flex-wrap gap-2 border-t border-zinc-500/15">{attachments.map((item, index) => <span key={`${item.filename}-${index}`} className="inline-flex items-center gap-2 rounded-full bg-zinc-500/10 px-3 py-1.5 text-xs"><Paperclip size={13}/>{item.filename}<span className="opacity-50">{(item.size / 1024).toFixed(0)} KB</span><button disabled={busy || attaching} onClick={() => setAttachments(v => v.filter((_, i) => i !== index))}><X size={13}/></button></span>)}</div>}
     {showMailPicker && <div className="mx-4 mb-2 max-h-36 overflow-y-auto rounded-xl border theme-border p-2"><p className="text-xs opacity-55 px-2 py-1">{t('compose.pickEmail')}</p>{availableEmails.slice(0, 50).map(email => <button key={email.id} disabled={busy || attaching} onClick={() => void attachEmail(email)} className="w-full text-left px-2 py-2 rounded-lg theme-hover"><span className="block text-xs font-semibold truncate">{email.subject}</span><span className="block text-[11px] opacity-50 truncate">{email.from}</span></button>)}</div>}
+    <button disabled={busy || attaching} onClick={()=>void saveProviderCopy()} className="text-xs text-left px-4 py-2 theme-hover" title={t('workflow.draftCopyHint')}>{t('workflow.saveProviderCopy')}</button>
     {error && <p role="alert" className="px-4 pb-2 text-sm text-rose-500">{error}</p>}
     <footer className="theme-elevated flex items-center gap-1 px-4 py-3 border-t theme-border"><button disabled={busy || attaching} onClick={() => void send()} className="btn-primary flex items-center gap-2 px-5"><Send size={16}/>{busy ? t('compose.sending') : t('compose.send')}</button><input ref={fileInput} type="file" multiple className="hidden" onChange={e => void addFiles(e.target.files)}/><button disabled={busy || attaching} title={t('compose.attachFile')} onClick={() => fileInput.current?.click()} className="p-2.5 rounded-lg theme-hover"><FileUp size={18}/></button><button disabled={busy || attaching} title={t('compose.attachEmail')} onClick={() => setShowMailPicker(!showMailPicker)} className="p-2.5 rounded-lg theme-hover"><MailPlus size={17}/></button><button disabled={busy} title={t('compose.bold')} onMouseDown={e => e.preventDefault()} onClick={() => format('strong')} className="p-2.5 rounded-lg theme-hover"><Bold size={17}/></button><button disabled={busy} title={t('compose.italic')} onMouseDown={e => e.preventDefault()} onClick={() => format('em')} className="p-2.5 rounded-lg theme-hover"><Italic size={17}/></button><button disabled={busy} title={t('compose.link')} onMouseDown={e => e.preventDefault()} onClick={() => { rememberSelection(); setShowLink(!showLink); }} className="p-2.5 rounded-lg theme-hover"><Link size={17}/></button><span className="flex-1"/><button disabled={busy || attaching} title={t('compose.discard')} onClick={() => { onDraftChange?.(null); reset(); }} className="p-2.5 rounded-lg hover:bg-rose-500/10 text-rose-500"><Trash2 size={17}/></button></footer>
   </div></div>;

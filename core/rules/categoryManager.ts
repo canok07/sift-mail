@@ -195,21 +195,26 @@ export function evaluateAutoRules(
   email: EmailMessage,
   rules: AutoRule[]
 ): { matchedRule: AutoRule; category: SafeCategory } | null {
-  const activeRules = rules.filter((r) => r.isActive);
+  const activeRules = rules.filter((r) => r.isActive && (!r.accountIds || r.accountIds.includes(email.accountId || '')) &&
+    (!r.folderTypes || r.folderTypes.includes(email.folderType || 'other')));
   const fromLower = email.from.toLowerCase();
   const subjectLower = email.subject.toLowerCase();
   const fromEmail = email.fromEmail?.toLowerCase() || '';
 
   for (const rule of activeRules) {
-    const val = rule.patternValue.toLowerCase();
+    const val = rule.patternValue.trim().toLowerCase();
+    if(!val)continue;
 
     if (rule.patternType === 'domain') {
       // Check if sender domain matches
-      if (fromEmail.endsWith(val) || fromLower.includes(`@${val}`) || fromLower.includes(`.${val}`)) {
+      const address=fromEmail || fromLower.match(/<([^<>]+)>/)?.[1] || fromLower;
+      const domain=address.split('@')[1];
+      if (domain && /^[a-z0-9.-]+\.[a-z]{2,}$/.test(val) && (domain===val || domain.endsWith(`.${val}`))) {
         return { matchedRule: rule, category: rule.category };
       }
     } else if (rule.patternType === 'from') {
-      if (fromEmail.includes(val) || fromLower.includes(val)) {
+      const address=fromEmail || fromLower.match(/<([^<>]+)>/)?.[1] || fromLower;
+      if (address.trim() === val) {
         return { matchedRule: rule, category: rule.category };
       }
     } else if (rule.patternType === 'subject') {

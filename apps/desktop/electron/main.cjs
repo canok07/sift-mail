@@ -86,10 +86,10 @@ async function createWindow() {
     if (!current.isDestroyed()) current.show();
   });
   current.webContents.setWindowOpenHandler(({ url }) => {
-    const target = new URL(url);
-    if (target.hostname === 'login.microsoftonline.com' || target.hostname === 'accounts.google.com' || target.hostname.endsWith('.yandex.com')) {
-      return { action: 'allow', overrideBrowserWindowOptions: { width: 520, height: 760, autoHideMenuBar: true, webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true } } };
-    }
+    let target;
+    try { target = new URL(url); } catch { return { action: 'deny' }; }
+    // OAuth uses the system browser; embedded user agents are rejected by Google.
+    // The local backend receives callbacks and the app polls with a private capability.
     if (target.protocol === 'https:') shell.openExternal(url).catch(() => {});
     return { action: 'deny' };
   });

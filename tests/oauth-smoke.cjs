@@ -32,15 +32,19 @@ const os = require('node:os');
     assert.equal(deniedStatus, 403, 'public Host must not receive a local session token');
     let syncPayload;
     let smtpPayload;
-    await page.route('**/api/oauth/microsoft/auth-url**', route => route.fulfill({ json: {
-      success: true, authUrl: `${base}/oauth/microsoft/callback?code=fixture-code&state=fixture-state`,
-    } }));
-    await page.route('**/api/oauth/microsoft/callback', route => route.fulfill({ json: {
-      success: true, email: 'fixture@outlook.com', accessToken: 'fixture-oauth-token', expiresIn: 3600,
-    } }));
+    await page.addInitScript(() => { window.__oauthOpened = []; window.open = url => { window.__oauthOpened.push(url); return null; }; });
+    for (const provider of ['google', 'microsoft']) {
+      await page.route(`**/api/oauth/${provider}/start`, route => route.fulfill({ json: {
+        success: true, requestId: 'x'.repeat(43), authUrl: provider === 'google' ? 'https://accounts.google.com/o/oauth2/v2/auth' : 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
+      } }));
+      await page.route(`**/api/oauth/${provider}/status`, route => route.fulfill({ json: {
+        status: 'complete', success: true, email: provider === 'google' ? 'fixture@gmail.com' : 'fixture@outlook.com', accessToken: `fixture-${provider}-oauth-token`, expiresIn: 3600,
+      } }));
+      await page.route(`**/api/oauth/${provider}/cancel`, route => route.fulfill({ json: { success: true } }));
+    }
     await page.route('**/api/emails/sync', route => {
       syncPayload = route.request().postDataJSON();
-      return route.fulfill({ json: { success: true, messages: [], mailboxes: [], account: { email: syncPayload.email, provider: syncPayload.email.endsWith('@outlook.com') ? 'outlook' : 'imap' } } });
+      return route.fulfill({ json: { success: true, messages: [], mailboxes: [], account: { email: syncPayload.email, provider: syncPayload.email.endsWith('@outlook.com') ? 'outlook' : syncPayload.email.endsWith('@gmail.com') ? 'gmail' : 'imap' } } });
     });
     await page.route('**/api/smtp/send', route => {
       smtpPayload = route.request().postDataJSON();
@@ -49,9 +53,15 @@ const os = require('node:os');
     await page.goto(base);
     await page.getByTitle('Hesaplar').click();
     await page.getByRole('button', { name: 'Microsoft / Outlook' }).click();
-    await expect.poll(() => syncPayload?.accessToken).toBe('fixture-oauth-token');
+    await expect.poll(() => syncPayload?.accessToken).toBe('fixture-microsoft-oauth-token');
     assert.equal(syncPayload.email, 'fixture@outlook.com');
     assert.equal(syncPayload.password, '');
+    await expect.poll(() => page.evaluate(() => window.__oauthOpened[0])).toMatch(/^https:\/\/login.microsoftonline.com\//);
+    await page.getByTitle('Hesaplar').click();
+    await page.getByRole('button', { name: 'Google / Gmail', exact: true }).click();
+    await expect.poll(() => syncPayload?.accessToken).toBe('fixture-google-oauth-token');
+    assert.equal(syncPayload.host, 'imap.gmail.com'); assert.equal(syncPayload.password, '');
+    await expect.poll(() => page.evaluate(() => window.__oauthOpened[1])).toMatch(/^https:\/\/accounts.google.com\//);
 
     await page.getByTitle('Hesaplar').click();
     await page.getByPlaceholder('ornek@yandex.com, isim@sirket.com...').fill('fixture@custom.test');
@@ -64,21 +74,39 @@ const os = require('node:os');
     await page.getByRole('button', { name: 'Oluştur', exact: true }).click();
     await page.getByPlaceholder('ad@example.com').fill('receiver@example.com');
     await page.getByTestId('compose-modal').getByPlaceholder('Konu', { exact: true }).fill('SMTP ayar testi');
-    await page.getByTestId('compose-modal').getByPlaceholder('İleti', { exact: true }).fill('Test iletisi');
+    await page.getByTestId('compose-modal').getByRole('textbox', { name: 'İleti', exact: true }).fill('Test iletisi');
     await page.getByRole('button', { name: 'Gönder', exact: true }).click();
     await expect.poll(() => smtpPayload?.config?.host).toBe('smtp.custom.test');
     assert.equal(smtpPayload.config.port, 587);
     assert.equal(smtpPayload.config.secure, false);
 
-    const stored = await page.evaluate(() => localStorage.getItem('sift_accounts_meta_v1'));
+    await expect.poll(()=>page.evaluate(async()=>{const {token}=await(await fetch('/api/auth/session')).json();return (await(await fetch('/api/local/mail-cache',{headers:{'x-sift-key':token}})).json()).snapshot?.accounts?.length;})).toBe(3);
+    const stored = await page.evaluate(async()=>{const {token}=await(await fetch('/api/auth/session')).json();return JSON.stringify((await(await fetch('/api/local/mail-cache',{headers:{'x-sift-key':token}})).json()).snapshot.accounts);});
     assert(stored.includes('fixture@custom.test'));
-    assert(!stored.includes('fixture-password') && !stored.includes('fixture-oauth-token'), 'account metadata must not contain credentials');
+    assert(stored.includes('"oauthProvider":"google"') && stored.includes('"oauthProvider":"microsoft"'));
+    assert(!stored.includes('fixture-password') && !stored.includes('-oauth-token'), 'account metadata must not contain credentials');
     await page.reload();
     await expect(page.getByText('Kayıtlı hesapların iletilerini görmek için yeniden oturum açın.')).toBeVisible();
+    await page.route('**/api/oauth/microsoft/refresh', route => route.fulfill({ json: { success: true, accessToken: 'fixture-reconnected-token', expiresIn: 3600 } }));
+    await page.getByTitle('Hesaplar').click();
+    await page.getByRole('button', { name: 'Bağlı Hesapları Yönet (3)' }).click();
+    await page.getByTestId('connected-account').filter({ hasText: 'fixture@outlook.com' }).getByRole('button', { name: 'Yeniden bağlan' }).click();
+    await expect.poll(() => syncPayload?.accessToken).toBe('fixture-reconnected-token');
+    assert.equal(syncPayload.email, 'fixture@outlook.com'); assert.equal(syncPayload.password, '');
+    await page.route('**/api/oauth/google/refresh', route => route.fulfill({ json: { success: false, code: 'REAUTH_REQUIRED', error: 'Google izni iptal edildi. Yeniden giriş yapın.' } }));
+    await page.getByTitle('Hesaplar').click();
+    await page.getByTestId('connected-account').filter({ hasText: 'fixture@gmail.com' }).getByRole('button', { name: 'Yeniden bağlan' }).click();
+    await expect(page.getByText('Google izni iptal edildi. Yeniden giriş yapın.')).toBeVisible();
+    await page.route('**/api/oauth/google/status', route => route.fulfill({ json: { status: 'pending' } }));
+    await page.getByRole('button', { name: 'Google / Gmail', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Girişi iptal et' })).toBeVisible();
+    await page.getByRole('button', { name: 'Girişi iptal et' }).click();
+    await expect(page.getByRole('button', { name: 'Google / Gmail', exact: true })).toBeEnabled();
+    assert.equal(syncPayload.email, 'fixture@outlook.com', 'cancelled login must not replace a connected account');
 
     const html = await page.evaluate(async baseUrl => (await fetch(`${baseUrl}/oauth/microsoft/callback?code=${encodeURIComponent('</script><script>window.hacked=true</script>')}&state=x`)).text(), base);
     assert(!html.includes('</script><script>window.hacked=true</script>'), 'OAuth callback script injection was not escaped');
-    console.log('Mail setup PASS: OAuth popup, first token sync, callback escaping, SMTP settings, safe account metadata.');
+    console.log('Mail setup PASS: Gmail/Outlook system-browser polling (mock provider), reconnect after relaunch, revoked-permission warning, cancellation, safe callback HTML, SMTP settings and credential-free metadata.');
   } finally {
     if (browser) await browser.close();
     child.kill();

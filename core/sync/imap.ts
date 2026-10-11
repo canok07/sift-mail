@@ -30,6 +30,7 @@ export interface ImapConnectOptions {
   offset?: number;
   sinceUid?: number;
   expectedUidValidity?: string;
+  knownUids?: number[];
   accountId?: string;
   provider?: string;
 }
@@ -49,6 +50,10 @@ export interface SmtpConnectOptions {
 export type ImapMailAction = 'mark_read' | 'mark_unread' | 'trash' | 'archive' | 'move';
 
 export interface ImapActionOptions extends ImapConnectOptions {
+  accountId: string;
+  accountEmail: string;
+  expectedUidValidity: string;
+  messageId?: string;
   uid: number;
   sourceFolder: string;
   action: ImapMailAction;
@@ -62,6 +67,13 @@ export interface FetchedImapMessage {
   messageId?: string;
   accountId?: string;
   folder: string;
+  to?: string[];
+  cc?: string[];
+  replyTo?: string[];
+  inReplyTo?: string;
+  references?: string[];
+  threadId?: string;
+  providerLabels?: string[];
   folderType: FolderType;
   subject: string;
   from: string;
@@ -75,6 +87,17 @@ export interface FetchedImapMessage {
   headers?: string;
   listUnsubscribe?: string;
   isRead: boolean;
+}
+
+export interface FolderDelta {
+  folder: string;
+  uidValidity: string;
+  reset: boolean;
+  checkedUids: number[];
+  deletedUids: number[];
+  flags: Array<{ uid: number; isRead: boolean; providerLabels?:string[] }>;
+  nextUid: number;
+  hasMore: boolean;
 }
 
 /**
@@ -195,6 +218,20 @@ export function classifyMailbox(mailbox: {
 }
 
 export function formatImapError(err: any, host?: string): string {
+  const identityErrors: Record<string, string> = {
+    IMAP_ACCOUNT_IDENTITY_MISMATCH: 'Posta hesabı eşleşmiyor. Hesabı yeniden bağlayın.',
+    IMAP_MESSAGE_IDENTITY_REQUIRED: 'İleti kimliği eksik. İşlemden önce klasörü yenileyin.',
+    IMAP_UIDVALIDITY_CHANGED: 'Posta kutusu değişti. İşlem yapılmadı; klasörü yenileyin.',
+    IMAP_MESSAGE_IDENTITY_CHANGED: 'İleti kimliği değişti. İşlem yapılmadı; klasörü yenileyin.',
+    IMAP_MESSAGE_NOT_FOUND: 'İleti sunucuda bulunamadı. Klasörü yenileyin.',
+    IMAP_ACTION_VERIFICATION_FAILED: 'Posta sunucusu işlemi doğrulamadı. Klasörü yenileyin.',
+    IMAP_MESSAGE_TOO_LARGE: 'İleti indirme boyutu sınırını aşıyor.',
+  };
+  if (identityErrors[err?.message]) return identityErrors[err.message];
+  if (err?.message === 'IMAP_FOLDER_FETCH_FAILED') {
+    const type = ['inbox', 'spam', 'sent', 'drafts', 'trash', 'archive', 'other'].includes(err.folderType) ? err.folderType : 'posta';
+    return `${type} klasörü okunamadı: ${formatImapError(err.cause, host)}`;
+  }
   const msg = (err?.message || err?.toString() || '').toLowerCase();
   const code = (err?.code || '').toLowerCase();
   const responseText = (err?.responseText || '').toLowerCase();
@@ -253,10 +290,11 @@ export function formatImapError(err: any, host?: string): string {
     return 'IMAP SSL/TLS güvenlik anlaşması başarısız oldu. Sunucu TLS sertifikası doğrulanamadı.';
   }
 
-  return err?.message || 'IMAP sunucusuna bağlanılamadı.';
+  if (/econn|socket|connection (?:closed|lost|reset)|network/i.test(msg + code)) return 'Posta sunucusu bağlantısı kesildi (connection lost). Yeniden deneyin.';
+  return 'IMAP işlemi tamamlanamadı. Bağlantıyı ve klasör bilgilerini kontrol edin.';
 }
 
-function buildImapClient(options: ImapConnectOptions): ImapFlow {
+export function buildImapClient(options: ImapConnectOptions): ImapFlow {
   let authConfig: any;
   if (options.auth.accessToken) {
     authConfig = {
@@ -276,6 +314,9 @@ function buildImapClient(options: ImapConnectOptions): ImapFlow {
     secure: options.secure,
     auth: authConfig,
     logger: false,
+    connectionTimeout: 20_000,
+    greetingTimeout: 15_000,
+    socketTimeout: 45_000,
     tls: getTlsOptions(),
   });
 }
@@ -327,18 +368,22 @@ export async function fetchImapMessages(
   messages: FetchedImapMessage[];
   mailboxes: MailboxInfo[];
   incremental: boolean;
+  delta?: FolderDelta;
   error?: string;
+  retryable?: boolean;
+  code?: string;
 }> {
   const client = buildImapClient(options);
   const accountId = options.accountId || 'acc-primary';
   let incremental = false;
+  let delta: FolderDelta | undefined;
 
   try {
     await client.connect();
 
     // 1. Discover all mailboxes
     const rawBoxes = await client.list();
-    const mailboxInfos: MailboxInfo[] = rawBoxes.map((b) => {
+    const mailboxInfos: MailboxInfo[] = rawBoxes.filter(b => !b.flags?.has('\\Noselect')).map((b) => {
       const { type, displayName } = classifyMailbox(b);
       return {
         path: b.path,
@@ -384,7 +429,7 @@ export async function fetchImapMessages(
     for (const target of targetFolders) {
       let lock: any = null;
       try {
-        lock = await client.getMailboxLock(target.path);
+        lock = await client.getMailboxLock(target.path, { readOnly: true });
         const mailbox = client.mailbox;
         const total = typeof mailbox === 'object' && mailbox && 'exists' in mailbox ? (mailbox as any).exists : 0;
 
@@ -397,14 +442,35 @@ export async function fetchImapMessages(
         }
 
         const currentUidValidity = String((mailbox as any)?.uidValidity || '0');
-        const canIncrement = Boolean(options.folder && options.sinceUid && options.expectedUidValidity === currentUidValidity);
+        const canIncrement = Boolean(options.folder && options.sinceUid !== undefined && options.expectedUidValidity === currentUidValidity);
+        const reset = Boolean(options.expectedUidValidity && options.expectedUidValidity !== currentUidValidity);
+        let newUids: number[] = [];
+        if (options.knownUids !== undefined) {
+          if (!options.folder || options.knownUids.length > 1000 || options.knownUids.some(uid => !Number.isInteger(uid) || uid < 1)) throw new Error('IMAP_INVALID_SYNC_UIDS');
+          const known = reset ? [] : Array.from(new Set(options.knownUids));
+          const flags: FolderDelta['flags'] = [];
+          if (known.length) {
+            // No bodies and no Seen mutation. Only explicitly checked missing UIDs may be removed locally.
+            for await (const msg of client.fetch(known.join(','), { uid: true, flags: true,labels:true }, { uid: true })) {
+              if (!known.includes(msg.uid) || !(msg.flags instanceof Set)) throw new Error('IMAP_INVALID_SYNC_METADATA');
+              flags.push({ uid: msg.uid, isRead: msg.flags.has('\\Seen'), providerLabels:[...(msg.labels || msg.flags)].filter(label=>!label.startsWith('\\')) });
+            }
+          }
+          const found = new Set(flags.map(item => item.uid));
+          delta = { folder: target.path, uidValidity: currentUidValidity, reset, checkedUids: known,
+            deletedUids: known.filter(uid => !found.has(uid)), flags, nextUid: 0, hasMore: false };
+        }
         let range: string | null = null;
         let fetchByUid = false;
         if (canIncrement) {
           incremental = true;
           const matches: number[] = await (client as any).search({ uid: `${Number(options.sinceUid) + 1}:*` }, { uid: true });
-          const newest = (matches || []).filter(uid => uid > Number(options.sinceUid)).slice(-maxResults);
-          if (newest.length) { range = newest.join(','); fetchByUid = true; }
+          if (!Array.isArray(matches)) throw new Error('IMAP_INVALID_SYNC_METADATA');
+          newUids = Array.from(new Set(matches.filter(uid => Number.isInteger(uid) && uid > Number(options.sinceUid)))).sort((a,b) => a-b);
+          // Oldest outstanding UID first: taking the newest batch loses mail when a backlog exceeds the limit.
+          const batch = newUids.slice(0, maxResults);
+          if (batch.length) { range = batch.join(','); fetchByUid = true; }
+          if (delta) { delta.nextUid = batch.at(-1) ?? options.sinceUid!; delta.hasMore = newUids.length > batch.length; }
         } else {
           const end = Math.max(0, total - (options.offset || 0));
           if (end > 0) range = `${Math.max(1, end - maxResults + 1)}:${end}`;
@@ -416,6 +482,8 @@ export async function fetchImapMessages(
             source: true,
             flags: true,
             uid: true,
+            labels: true,
+            threadId: true,
           }, { uid: fetchByUid })) {
             try {
               const envelope = msg.envelope;
@@ -445,7 +513,14 @@ export async function fetchImapMessages(
                 id: stableId,
                 uid: msg.uid,
                 uidValidity,
-                messageId: envelope?.messageId || undefined,
+                messageId: parsed.messageId || envelope?.messageId || undefined,
+                to: [parsed.to].flat().flatMap(value => value?.value.map(address => address.address || '') || []).filter(Boolean),
+                cc: [parsed.cc].flat().flatMap(value => value?.value.map(address => address.address || '') || []).filter(Boolean),
+                replyTo: parsed.replyTo?.value.map(address => address.address || '').filter(Boolean),
+                inReplyTo: parsed.inReplyTo,
+                references: typeof parsed.references === 'string' ? [parsed.references] : parsed.references,
+                threadId: msg.threadId ? String(msg.threadId) : undefined,
+                providerLabels: [...(msg.labels || msg.flags || [])].filter(label => !label.startsWith('\\')),
                 accountId,
                 folder: target.path,
                 folderType: target.type,
@@ -471,8 +546,9 @@ export async function fetchImapMessages(
             }
           }
         }
+        if (delta && !canIncrement) delta.nextUid = allMessages.filter(msg => msg.folder === target.path).reduce((n,msg) => Math.max(n,msg.uid), 0);
       } catch (folderErr: any) {
-        throw new Error(`${target.type} klasörü okunamadı: ${folderErr?.message || 'Bağlantı hatası'}`);
+        throw Object.assign(new Error('IMAP_FOLDER_FETCH_FAILED'), { folderType: target.type, cause: folderErr });
       } finally {
         if (lock && typeof lock.release === 'function') {
           try {
@@ -487,15 +563,20 @@ export async function fetchImapMessages(
       messages: allMessages.sort((a, b) => Date.parse(b.date) - Date.parse(a.date)),
       mailboxes: mailboxInfos,
       incremental,
+      delta,
     };
   } catch (err: any) {
-    console.error('IMAP e-posta çekme hatası:', err);
+    console.error('[Sift Mail] IMAP_FETCH_FAILED');
+    const cause = err?.cause || err;
+    const authFailure = Boolean(cause?.authenticationFailed) || /auth|invalid credentials|login failed/i.test(String(cause?.code || '') + ' ' + String(cause?.message || ''));
     return {
       success: false,
       messages: [],
       mailboxes: [],
       incremental: false,
       error: formatImapError(err, options.host),
+      code: authFailure ? 'REAUTH_REQUIRED' : 'SYNC_FAILED',
+      retryable: !authFailure,
     };
   } finally {
     try {
@@ -534,14 +615,21 @@ export async function fetchRawImapMessage(options: ImapConnectOptions & { folder
   }
 }
 
-export async function fetchImapAttachment(options: ImapConnectOptions & { folder: string; uid: number; index: number }): Promise<{ filename: string; contentType: string; content: string }> {
+export async function fetchImapAttachment(options: ImapConnectOptions & { folder: string; uid: number; index: number; messageId?: string }): Promise<{ filename: string; contentType: string; content: string }> {
   const client = buildImapClient(options);
   let lock: any = null;
   try {
     await client.connect();
     lock = await client.getMailboxLock(options.folder);
+    if (!options.expectedUidValidity && !options.messageId) throw new Error('IMAP_MESSAGE_IDENTITY_REQUIRED');
+    if (options.expectedUidValidity && String((client.mailbox as any)?.uidValidity) !== options.expectedUidValidity) throw new Error('IMAP_UIDVALIDITY_CHANGED');
+    const metadata: any = await client.fetchOne(options.uid, { size: true, envelope: true }, { uid: true });
+    if (!metadata) throw new Error('IMAP_MESSAGE_NOT_FOUND');
+    if (options.messageId && metadata.envelope?.messageId !== options.messageId) throw new Error('IMAP_MESSAGE_IDENTITY_CHANGED');
+    if (!Number.isInteger(metadata.size) || metadata.size < 1 || metadata.size > 25 * 1024 * 1024) throw new Error('IMAP_MESSAGE_TOO_LARGE');
     const message: any = await client.fetchOne(options.uid, { source: true }, { uid: true });
-    if (!message?.source) throw new Error('Ek içeren ileti bulunamadı.');
+    if (!message?.source) throw new Error('IMAP_MESSAGE_NOT_FOUND');
+    if (message.source.length > 25 * 1024 * 1024) throw new Error('IMAP_MESSAGE_TOO_LARGE');
     const parsed = await simpleParser(message.source);
     const attachment = parsed.attachments[options.index];
     if (!attachment) throw new Error('Ek bulunamadı.');
@@ -558,18 +646,26 @@ export async function fetchImapAttachment(options: ImapConnectOptions & { folder
 }
 
 export async function performImapAction(options: ImapActionOptions): Promise<{ success: boolean; verified: boolean; destination?: string }> {
+  // Never act on a cached UID without its mailbox generation and account binding.
+  if (!options.accountId || !options.accountEmail || options.accountEmail.trim().toLowerCase() !== options.auth.user.trim().toLowerCase()) throw new Error('IMAP_ACCOUNT_IDENTITY_MISMATCH');
+  if (!/^[1-9]\d{0,9}$/.test(options.expectedUidValidity || '') || Number(options.expectedUidValidity) > 4294967295) throw new Error('IMAP_MESSAGE_IDENTITY_REQUIRED');
+  if (!Number.isInteger(options.uid) || options.uid < 1 || !options.sourceFolder) throw new Error('IMAP_MESSAGE_IDENTITY_REQUIRED');
   const client = buildImapClient(options);
   let lock: any = null;
   try {
     await client.connect();
     const mailboxes = await client.list();
     lock = await client.getMailboxLock(options.sourceFolder);
+    if (String((client.mailbox as any)?.uidValidity) !== options.expectedUidValidity) throw new Error('IMAP_UIDVALIDITY_CHANGED');
+    const original: any = await client.fetchOne(options.uid, { uid: true, envelope: true }, { uid: true });
+    if (!original || original.uid !== options.uid) throw new Error('IMAP_MESSAGE_NOT_FOUND');
+    if (options.messageId && original.envelope?.messageId !== options.messageId) throw new Error('IMAP_MESSAGE_IDENTITY_CHANGED');
     if (options.action === 'mark_read' || options.action === 'mark_unread') {
       if (options.action === 'mark_read') await client.messageFlagsAdd(options.uid, ['\\Seen'], { uid: true });
       else await client.messageFlagsRemove(options.uid, ['\\Seen'], { uid: true });
       const current: any = await client.fetchOne(options.uid, { flags: true }, { uid: true });
       const isRead = Boolean(current?.flags?.has('\\Seen'));
-      const verified = options.action === 'mark_read' ? isRead : !isRead;
+      const verified = Boolean(current) && (options.action === 'mark_read' ? isRead : !isRead);
       if (!verified) throw new Error('IMAP_ACTION_VERIFICATION_FAILED');
       return { success: true, verified };
     }
@@ -578,7 +674,7 @@ export async function performImapAction(options: ImapActionOptions): Promise<{ s
     if (!destination) throw new Error(options.action === 'trash' ? 'Çöp klasörü bulunamadı.' : options.action === 'archive' ? 'Arşiv/Tüm Postalar klasörü bulunamadı.' : 'Hedef klasör belirtilmedi.');
     if (destination === options.sourceFolder) throw new Error('İleti zaten hedef klasörde.');
     await client.messageMove(options.uid, destination, { uid: true });
-    const sourceMessage: any = await client.fetchOne(options.uid, { uid: true }, { uid: true }).catch(() => false);
+    const sourceMessage: any = await client.fetchOne(options.uid, { uid: true }, { uid: true });
     const verified = !sourceMessage;
     if (!verified) throw new Error('IMAP_ACTION_VERIFICATION_FAILED');
     return { success: true, verified, destination };
@@ -620,7 +716,7 @@ export async function testSmtpConnection(
   } catch (err: any) {
     return {
       success: false,
-      message: err.message || 'SMTP sunucusuna bağlanılamadı.',
+      message: 'SMTP bağlantısı doğrulanamadı. Sunucu ayarlarını ve giriş bilgilerini kontrol edin.',
     };
   } finally {
     transporter.close();
@@ -638,9 +734,10 @@ export async function sendSmtpMessage(
     html?: string;
     replyTo?: string;
     inReplyTo?: string;
+    references?: string[];
     attachments?: Array<{ filename: string; content: string; encoding?: 'base64'; contentType?: string }>;
   }
-): Promise<{ success: boolean; messageId?: string; error?: string }> {
+): Promise<{ success: boolean; messageId?: string; partial?: boolean; accepted?: string[]; rejected?: string[]; error?: string }> {
   const authConfig: any = options.auth.accessToken
     ? {
         type: 'OAuth2',
@@ -672,11 +769,18 @@ export async function sendSmtpMessage(
       html: mail.html,
       replyTo: mail.replyTo,
       inReplyTo: mail.inReplyTo,
+      references: mail.references,
       attachments: mail.attachments,
     });
-    return { success: true, messageId: info.messageId };
+    const accepted = (info.accepted || []).map((value: any) => typeof value === 'string' ? value : value.address).filter(Boolean);
+    const rejected = (info.rejected || []).map((value: any) => typeof value === 'string' ? value : value.address).filter(Boolean);
+    if(Array.isArray(info.accepted) && !accepted.length && rejected.length)return {success:false,error:'Hiçbir alıcı teslimatı kabul etmedi. Alıcı adreslerini kontrol edin.'};
+    // Never retry an already accepted message merely because another recipient was rejected.
+    return { success: true, messageId: info.messageId, partial: rejected.length > 0, accepted, rejected };
   } catch (err: any) {
-    console.error('SMTP gönderme hatası:', err);
-    return { success: false, error: err.message || 'E-posta gönderilemedi.' };
+    console.error('[Sift Mail] SMTP_SEND_FAILED');
+    return { success: false, error: 'SMTP gönderme işlemi doğrulanamadı. Yeniden göndermeden önce Gönderilenler klasörünü kontrol edin.' };
+  } finally {
+    transporter.close();
   }
 }

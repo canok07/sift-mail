@@ -16,18 +16,8 @@ import {
 import { AppTheme } from './Header';
 import { detectMailProvider, AutoDiscoveredConfig } from '../../core/mail/providerManager';
 
-export interface DynamicLoginCredentials {
-  email: string;
-  password: string;
-  accessToken?: string;
-  accessTokenExpiresAt?: number;
-  host?: string;
-  port?: number;
-  secure?: boolean;
-  smtpHost?: string;
-  smtpPort?: number;
-  smtpSecure?: boolean;
-}
+export type { DynamicSyncCredentials as DynamicLoginCredentials } from '../services/accountService';
+import type { DynamicSyncCredentials as DynamicLoginCredentials } from '../services/accountService';
 
 interface DynamicEmailLoginCardProps {
   onLoginAndSync: (credentials: DynamicLoginCredentials) => Promise<void>;

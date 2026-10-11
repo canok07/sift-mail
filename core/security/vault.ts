@@ -129,6 +129,7 @@ export interface StoredVaultItem {
   label: string;
   category: 'imap_password' | 'gemini_api_key' | 'smtp_password' | 'custom_token' | 'telegram' | string;
   updatedAt: string;
+  accountEmail?: string;
 }
 
 // Encrypt string using authenticated AES-256-GCM
@@ -194,7 +195,7 @@ export function decryptData(cipherText: string): string {
         atomicWriteText(VAULT_FILE, reEncrypted);
         console.log('[Sift Vault] Eski AES-256-CBC kasası başarıyla güvenli AES-256-GCM formatına yükseltildi.');
       } catch (migrateErr) {
-        console.warn('[Sift Vault] Otomatik GCM yükseltme uyarısı:', migrateErr);
+        console.warn('[Sift Vault] VAULT_MIGRATION_FAILED');
       }
 
       return decrypted;
@@ -236,7 +237,8 @@ export function saveVaultSecret(
   key: string,
   value: string,
   category: StoredVaultItem['category'] = 'imap_password',
-  label: string = key
+  label: string = key,
+  accountEmail?: string
 ): void {
   const items = loadVaultItems();
   items[key] = {
@@ -245,6 +247,7 @@ export function saveVaultSecret(
     label,
     category,
     updatedAt: new Date().toISOString(),
+    ...(accountEmail ? { accountEmail: accountEmail.trim().toLowerCase() } : {}),
   };
   saveVaultItems(items);
 }
@@ -254,7 +257,7 @@ export function getVaultSecret(key: string): string | null {
     const items = loadVaultItems();
     return items[key]?.value || null;
   } catch (err: any) {
-    console.error(`[Vault Error reading key '${key}']`, err.message);
+    console.error('[Sift Vault] VAULT_READ_FAILED');
     throw err;
   }
 }
@@ -272,10 +275,7 @@ export function deleteVaultSecret(key: string): boolean {
 export function getVaultSummary() {
   const items = loadVaultItems();
   const entries = Object.values(items).map((item) => {
-    let masked = '••••••••';
-    if (item.value.length > 4) {
-      masked = `${item.value.slice(0, 2)}••••••••${item.value.slice(-2)}`;
-    }
+    const masked = '••••••••';
     return {
       key: item.key,
       label: item.label,
@@ -293,6 +293,21 @@ export function getVaultSummary() {
     lastUpdated: entries.length > 0 ? entries[entries.length - 1].updatedAt : new Date().toISOString(),
     keys: entries,
   };
+}
+
+/** Exact ownership only: never infer ownership from labels or substring matches. */
+export function forgetAccountSecrets(email: string): void {
+  const normalized = email.trim().toLowerCase();
+  const legacyKeys = new Set(['ms_refresh_', 'ms_client_', 'google_refresh_', 'google_client_', 'google_secret_', 'imap_password_', 'smtp_password_'].map(prefix => prefix + normalized));
+  const items = loadVaultItems();
+  let changed = false;
+  for (const [key, item] of Object.entries(items)) {
+    const isMailPassword = item.category === 'imap_password' || item.category === 'smtp_password';
+    const owned = (isMailPassword && item.accountEmail?.trim().toLowerCase() === normalized) ||
+      legacyKeys.has(key.toLowerCase()) || (isMailPassword && key.toLowerCase() === normalized);
+    if (owned) { delete items[key]; changed = true; }
+  }
+  if (changed) saveVaultItems(items);
 }
 
 export function verifyVaultIntegrity(): { valid: boolean; error?: string } {

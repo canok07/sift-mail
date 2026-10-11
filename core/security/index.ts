@@ -22,7 +22,7 @@ export function isLocalSessionRequest(remoteAddress: string | undefined, host: s
 }
 
 export function isValidToken(providedToken: string | undefined | null): boolean {
-  if (!providedToken) return false;
+  if (typeof providedToken !== 'string' || !providedToken) return false;
   const clean = providedToken.replace(/^Bearer\s+/i, '').trim();
   if (!clean) return false;
 
@@ -59,19 +59,7 @@ export function requireApiToken(req: Request, res: Response, next: NextFunction)
     return next();
   }
 
-  // Same-origin loopback check: if no static SIFT_API_KEY is configured in .env and the request
-  // is directly originating from localhost/127.0.0.1 with standard browser headers, allow it,
-  // but if SIFT_API_KEY was explicitly set, enforce it strictly.
-  if (!getStaticApiKey()) {
-    const isLoopback = isLocalSessionRequest(req.socket.remoteAddress, req.headers.host);
-
-    const origin = req.headers.origin;
-    const isSameOrigin = !origin || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
-
-    if (isLoopback && isSameOrigin) {
-      return next();
-    }
-  }
+  // Loopback is not authentication: sensitive actions require a session token.
 
   return res.status(401).json({
     success: false,
